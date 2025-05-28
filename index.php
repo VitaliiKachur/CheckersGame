@@ -4,18 +4,17 @@ session_start();
 require_once 'src/Board.php';
 require_once 'src/GameManager.php';
 
-// function getCellClass(int $row, int $col): string
-// { /* ... */
-// }
+require_once 'src/Board.php';
+
 function renderCell(int $row, int $col, string $cellClass, string $selectedClass, string $possibleMoveClass, string $boxShadowStyle, $piece = null): string
 {
     $html = "<form action='index.php' method='post' style='display:inline;'>";
-    $html .= "<input type='hidden' name='action' value='move'>"; // Додаємо input для action=move
+    $html .= "<input type='hidden' name='action' value='move'>"; 
     $html .= "<input type='hidden' name='row' value='{$row}'>";
     $html .= "<input type='hidden' name='col' value='{$col}'>";
     $html .= "<button type='submit' class='cell {$cellClass} {$selectedClass} {$possibleMoveClass}' data-row='{$row}' data-col='{$col}' style='box-shadow: {$boxShadowStyle};'>";
 
-    if ($piece instanceof PieceInterface) { // Тепер перевіряємо на інтерфейс
+    if ($piece instanceof PieceInterface) { 
         $kingClass = $piece->isKing() ? ' king' : '';
         $html .= "<div class='piece {$piece->getColor()}{$kingClass}'></div>";
     }
@@ -24,9 +23,75 @@ function renderCell(int $row, int $col, string $cellClass, string $selectedClass
 
     return $html;
 }
-// function renderBoard(array $boardData): string
-// { /* ... */
-// }
+function getFilteredPossibleMoves(?array $selectedCell, array $boardData, GameManager $gameManager): array
+{
+    if (!$selectedCell) {
+        return [];
+    }
+
+    $selectedPiece = $boardData[$selectedCell['row']][$selectedCell['col']] ?? null;
+
+    if (!$selectedPiece || !($selectedPiece instanceof PieceInterface) || $selectedPiece->getColor() !== $gameManager->getCurrentPlayer()) {
+        return [];
+    }
+
+    $possibleMoves = $selectedPiece->getPossibleMoves($selectedCell['row'], $selectedCell['col'], $gameManager->getBoard());
+
+
+    return $possibleMoves; 
+}
+
+function renderBoard(array $boardData, ?array $selectedCell, GameManager $gameManager): string
+{
+    $html = '<div class="board" id="board">';
+
+    $filteredPossibleMoves = getFilteredPossibleMoves($selectedCell, $boardData, $gameManager);
+
+    for ($row = 0; $row < 8; $row++) {
+        for ($col = 0; $col < 8; $col++) {
+            // Нова функція для стилів ходів
+            $cellClass = getCellClass($row, $col);
+            [$possibleMoveClass, $boxShadowStyle] = getCellMoveStyles($row, $col, $filteredPossibleMoves);
+
+
+            $selectedClass = isSelectedCell($selectedCell, $row, $col) ? 'selected' : '';
+
+            $html .= renderCell(
+                $row,
+                $col,
+                 $cellClass,
+                $selectedClass,
+                $possibleMoveClass,
+                $boxShadowStyle,
+                $boardData[$row][$col] ?? null
+            );
+        }
+    }
+    $html .= '</div>';
+    return $html;
+}
+
+function getCellMoveStyles(int $row, int $col, array $filteredPossibleMoves): array
+{
+    $possibleMoveClass = '';
+    $boxShadowStyle = '';
+
+    foreach ($filteredPossibleMoves as $move) {
+        if ($move['row'] === $row && $move['col'] === $col) {
+            $possibleMoveClass = 'possible-move';
+            if (!empty($move['isCapture'])) {
+                $boxShadowStyle = 'inset 0 0 20px rgba(255, 0, 0, 0.7)'; 
+            }
+            break;
+        }
+    }
+    return [$possibleMoveClass, $boxShadowStyle];
+}
+
+function isSelectedCell(?array $selectedCell, int $row, int $col): bool
+{
+    return $selectedCell !== null && $selectedCell['row'] === $row && $selectedCell['col'] === $col;
+}
 
 
 if (isset($_SESSION['game_state'])) {
@@ -46,14 +111,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$_SESSION['game_state'] = serialize($gameManager);
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (isset($_POST['action'])) {
+        if ($_POST['action'] === 'reset') {
+            $gameManager->resetGame('player_vs_player'); 
+        } elseif ($_POST['action'] === 'move') {
+            $row = isset($_POST['row']) ? (int) $_POST['row'] : null;
+            $col = isset($_POST['col']) ? (int) $_POST['col'] : null;
+            $gameManager->handleAction($row, $col);
+        }
+    }
+}
 
 $boardData = $gameManager->getBoardData();
 $currentPlayer = $gameManager->getCurrentPlayer();
+$selectedCell = $gameManager->getSelectedCell(); 
 $gameStatus = $gameManager->getGameStatus();
 $message = $gameManager->getMessage();
 $messageType = $gameManager->getMessageType();
-$gameMode = $gameManager->getGameMode();
+$gameMode = $gameManager->getGameMode(); 
 
 ?>
 <!DOCTYPE html>
@@ -212,10 +288,24 @@ $gameMode = $gameManager->getGameMode();
             color: #0366d6;
             border: 1px solid #cce5ff;
         }
+
+        .cell.selected {
+            background-color: #FFD700;
+            border: 2px solid #DAA520;
+            box-sizing: border-box;
+        }
+
+        .cell.possible-move {
+            background-color: #7FFF00;
+            border: 2px solid #6B8E23;
+            box-sizing: border-box;
+        }
     </style>
 </head>
+
 <body>
     <div class="game-container">
+
         <h1>🏁 Шашки 🏁</h1>
         <div class="game-info">
             <div>Поточний гравець: <strong><?php echo ucfirst($currentPlayer); ?></strong></div>
@@ -236,6 +326,26 @@ $gameMode = $gameManager->getGameMode();
                 <?php echo $message; ?>
             </div>
         <?php endif; ?>
+        <div class="game-container">
+            <?php echo renderBoard($boardData, $selectedCell, $gameManager); ?>
+            <script>
+                document.addEventListener('DOMContentLoaded', () => {
+                    const board = document.getElementById('board');
+                    const initialSelectedRow = <?php echo json_encode($selectedCell['row'] ?? null); ?>;
+                    const initialSelectedCol = <?php echo json_encode($selectedCell['col'] ?? null); ?>;
+
+                    function markSelectedCell(row, col) {
+                        if (row === null || col === null) return;
+                        const cell = board.querySelector(`[data-row="<span class="math-inline">\{row\}"\]\[data\-col\="</span>{col}"]`);
+                        if (cell) {
+                            cell.classList.add('selected');
+                        }
+                    }
+                    markSelectedCell(initialSelectedRow, initialSelectedCol);
+                });
+            </script>
+        </div>
     </div>
 </body>
+
 </html>
