@@ -4,52 +4,64 @@ require_once 'src/Board.php';
 require_once 'src/Interfaces/PieceInterface.php';
 require_once 'src/Moves/KingMoveStrategy.php';
 require_once 'src/Bots/BotFactory.php';
+require_once 'src/Messages/MessageObserver.php';
+require_once 'src/Messages/MessageService.php';
+require_once 'src/Validation/MoveValidatorInterface.php';
+require_once 'src/Validation/MoveValidationResult.php';
+require_once 'src/Validation/CheckersMoveValidator.php';
+require_once 'src/Commands/MoveCommandInterface.php';
+require_once 'src/Commands/CaptureMoveCommand.php';
+require_once 'src/Commands/RegularMoveCommand.php';
+require_once 'src/Game/GameState.php';
+require_once 'src/Game/GameEndDetector.php';
+require_once 'src/Game/PlayerActionHandler.php';
+require_once 'src/Bots/BotService.php';
 
-class GameManager
+class GameManager implements MessageObserver
 {
     private static ?GameManager $instance = null;
     private Board $board;
-    private string $currentPlayer;
-    private ?array $selectedCell;
-    private bool $gameOver;
-    private string $gameStatus;
-    private string $message;
-    private string $messageType;
-    private string $gameMode; 
-    private ?BotInterface $bot = null; 
+    private GameState $gameState;
+    private MessageService $messageService;
+    private PlayerActionHandler $playerActionHandler;
+    private GameEndDetector $gameEndDetector;
+    private BotService $botService;
+    private MoveValidatorInterface $moveValidator;
 
     private function __construct()
     {
-        $this->initializeNewGame('player_vs_player'); 
+        $this->initializeServices();
+        $this->initializeNewGame('player_vs_player');
+    }
+
+    private function initializeServices(): void
+    {
+        $this->board = new Board();
+        $this->messageService = new MessageService();
+        $this->messageService->addObserver($this);
+        $this->moveValidator = new CheckersMoveValidator();
+        $this->playerActionHandler = new PlayerActionHandler($this->board, $this->messageService, $this->moveValidator);
+        $this->gameEndDetector = new GameEndDetector($this->board, $this->messageService);
+        $this->botService = new BotService($this->board, $this->messageService);
+    }
+
+    public function onMessage(string $message, string $type): void
+    {
+        // Handle message if needed for logging or other purposes
     }
 
     private function initializeNewGame(string $gameMode): void
     {
         $this->board = new Board();
-        $this->currentPlayer = 'white';
-        $this->selectedCell = null;
-        $this->gameOver = false;
-        $this->gameStatus = 'В процесі';
-        $this->message = '';
-        $this->messageType = 'info';
-        $this->gameMode = $gameMode;
-        $this->bot = null; 
-        if ($this->gameMode === 'player_vs_bot') {
-            $this->bot = BotFactory::createBot('simple'); 
-        }
-        $this->showMessage('Нова гра розпочата. ' . ($this->gameMode === 'player_vs_bot' ? 'Ви граєте проти бота.' : 'Гравець проти гравця.'), 'info');
-    }
+        $this->gameState = new GameState($gameMode);
 
-    public function __wakeup()
-    {
-        if ($this->message === 'Ви повинні продовжити бити!' && $this->selectedCell !== null) {
-        } else {
-            $this->message = '';
-            $this->messageType = 'info';
-        }
-        if ($this->gameMode === 'player_vs_bot' && $this->bot === null) {
-            $this->bot = BotFactory::createBot('simple');
-        }
+        // Reinitialize services with new board
+        $this->playerActionHandler = new PlayerActionHandler($this->board, $this->messageService, $this->moveValidator);
+        $this->gameEndDetector = new GameEndDetector($this->board, $this->messageService);
+        $this->botService = new BotService($this->board, $this->messageService);
+
+        $this->botService->initializeBot($gameMode);
+        $this->messageService->showMessage('Нова гра розпочата. ' . ($gameMode === 'player_vs_bot' ? 'Ви граєте проти бота.' : 'Гравець проти гравця.'), 'info');
     }
 
     public static function getInstance(): GameManager
@@ -60,6 +72,18 @@ class GameManager
         return self::$instance;
     }
 
+    public function __wakeup()
+    {
+        if ($this->messageService->getMessage() === 'Ви повинні продовжити бити!' && $this->gameState->getSelectedCell() !== null) {
+        } else {
+            $this->messageService->showMessage('', 'info');
+        }
+
+        if ($this->gameState->getGameMode() === 'player_vs_bot') {
+            $this->botService->initializeBot('player_vs_bot');
+        }
+    }
+
     public function resetGame(string $gameMode = 'player_vs_player'): void
     {
         $this->initializeNewGame($gameMode);
@@ -67,261 +91,137 @@ class GameManager
 
     public function handleAction(?int $row, ?int $col): void
     {
-        if ($this->isGameOver())
+        if (!$this->isValidGameState()) {
             return;
-        if ($this->isBotTurn())
-            return;
-        if ($this->isInvalidCell($row, $col))
-            return;
-
-        if ($this->selectedCell) {
-            $this->handleMoveAttempt($row, $col);
-        } else {
-            $this->selectPiece($row, $col);
         }
 
-        if ($this->shouldBotMove()) {
-            $this->makeBotMove();
+        if (!$this->areValidCoordinates($row, $col)) {
+            $this->handleInvalidCoordinates();
+            return;
         }
+
+        $this->processPlayerAction($row, $col);
+        $this->processBotTurnIfNeeded();
     }
-    private function isGameOver(): bool
+
+    private function isValidGameState(): bool
     {
-        if ($this->gameOver) {
-            $this->showMessage('Гра закінчена. Натисніть "Нова гра" для початку.', 'info');
-            return true;
+        if ($this->gameState->isGameOver()) {
+            $this->messageService->showMessage('Гра закінчена. Натисніть "Нова гра" для початку.', 'info');
+            return false;
         }
-        return false;
+
+        if ($this->isBotTurn()) {
+            $this->messageService->showMessage('Зараз хід бота. Будь ласка, зачекайте.', 'info');
+            return false;
+        }
+
+        return true;
     }
 
     private function isBotTurn(): bool
     {
-        if ($this->gameMode === 'player_vs_bot' && $this->currentPlayer === 'black') {
-            $this->showMessage('Зараз хід бота. Будь ласка, зачекайте.', 'info');
-            return true;
-        }
-        return false;
+        return $this->gameState->getGameMode() === 'player_vs_bot' &&
+            $this->gameState->getCurrentPlayer() === 'black';
     }
 
-    private function isInvalidCell(?int $row, ?int $col): bool
+    private function areValidCoordinates(?int $row, ?int $col): bool
     {
-        if ($row === null || $col === null || $row < 0 || $row >= 8 || $col < 0 || $col >= 8) {
-            $this->showMessage('Недійсні координати клітинки.', 'error');
+        return $row !== null && $col !== null &&
+            $row >= 0 && $row < 8 &&
+            $col >= 0 && $col < 8;
+    }
+
+    private function handleInvalidCoordinates(): void
+    {
+        $this->messageService->showMessage('Недійсні координати клітинки.', 'error');
+        $this->gameState->clearSelection();
+    }
+
+    private function processPlayerAction(int $row, int $col): void
+    {
+        $selectedCell = $this->gameState->getSelectedCell();
+
+        if ($selectedCell) {
+            $this->handleCellClickWithSelection($row, $col, $selectedCell);
+        } else {
+            $this->handleCellClickWithoutSelection($row, $col);
+        }
+    }
+
+    private function handleCellClickWithSelection(int $row, int $col, array $selectedCell): void
+    {
+        if ($this->isClickOnSelectedPiece($row, $col, $selectedCell)) {
             $this->clearSelection();
-            return true;
+            return;
         }
-        return false;
+
+        if ($this->isClickOnOwnPiece($row, $col)) {
+            $this->handleOwnPieceClick($row, $col, $selectedCell);
+            return;
+        }
+
+        $this->handleMoveAttempt($row, $col);
     }
 
-    private function handleMoveAttempt(int $row, int $col): void
+    private function handleCellClickWithoutSelection(int $row, int $col): void
     {
-        $this->attemptMove($this->selectedCell['row'], $this->selectedCell['col'], $row, $col);
-
-        if ($this->selectedCell && $this->message !== 'Ви повинні продовжити бити!') {
-            $this->clearSelection();
-        }
+        $this->playerActionHandler->selectPiece($row, $col, $this->gameState);
     }
 
-    private function shouldBotMove(): bool
+    private function isClickOnSelectedPiece(int $row, int $col, array $selectedCell): bool
     {
-        return $this->gameMode === 'player_vs_bot' && !$this->gameOver && $this->currentPlayer === 'black';
+        return $selectedCell['row'] === $row && $selectedCell['col'] === $col;
     }
 
-
-    private function attemptMove(int $fromRow, int $fromCol, int $toRow, int $toCol): void
+    private function isClickOnOwnPiece(int $row, int $col): bool
     {
-        $piece = $this->getSelectedPiece($fromRow, $fromCol);
-        if (!$piece)
-            return;
-
-        $captureInfo = $this->getCaptureInfo($piece, $fromRow, $fromCol, $toRow, $toCol);
-        $hasMandatoryCapture = $this->playerHasCaptures($this->currentPlayer);
-
-        if ($this->isInvalidDueToMandatoryCapture($hasMandatoryCapture, $captureInfo))
-            return;
-        if ($captureInfo) {
-            $this->processCapture($fromRow, $fromCol, $toRow, $toCol, $captureInfo['captured']);
-            return;
-        }
-        if ($this->canPerformRegularMove($piece, $fromRow, $fromCol, $toRow, $toCol, $hasMandatoryCapture)) {
-            $this->processRegularMove($fromRow, $fromCol, $toRow, $toCol);
-            return;
-        }
-
-        $this->showMessage('Недійсний хід або ви повинні бити.', 'error');
-        $this->checkGameEnd();
+        $clickedPiece = $this->board->getPiece($row, $col);
+        return $clickedPiece && $clickedPiece->getColor() === $this->gameState->getCurrentPlayer();
     }
-    private function getSelectedPiece(int $row, int $col): ?PieceInterface
+
+    private function handleOwnPieceClick(int $row, int $col, array $selectedCell): void
+    {
+        if ($this->canChangeSelection($selectedCell)) {
+            $this->playerActionHandler->selectPiece($row, $col, $this->gameState);
+        } else {
+            $this->messageService->showMessage('Ви повинні продовжити бити цією шашкою!', 'error');
+        }
+    }
+
+    private function canChangeSelection(array $selectedCell): bool
+    {
+        return !$this->isInMandatoryCapture($selectedCell['row'], $selectedCell['col']);
+    }
+
+    private function isInMandatoryCapture(int $row, int $col): bool
     {
         $piece = $this->board->getPiece($row, $col);
         if (!$piece) {
-            $this->showMessage('Вибрана фігура не знайдена.', 'error');
-        }
-        return $piece;
-    }
-
-    private function getCaptureInfo(PieceInterface $piece, int $fromRow, int $fromCol, int $toRow, int $toCol): ?array
-    {
-        $possibleCaptures = $piece->getPossibleCaptures($fromRow, $fromCol, $this->board);
-        return $this->findCaptureOption($possibleCaptures, $toRow, $toCol);
-    }
-
-    private function isInvalidDueToMandatoryCapture(bool $hasMandatoryCapture, ?array $captureInfo): bool
-    {
-        if ($hasMandatoryCapture && !$captureInfo) {
-            $this->showMessage('Ви повинні бити, якщо це можливо!', 'error');
-            return true;
-        }
-        return false;
-    }
-
-    private function canPerformRegularMove(PieceInterface $piece, int $fromRow, int $fromCol, int $toRow, int $toCol, bool $hasMandatoryCapture): bool
-    {
-        return !$hasMandatoryCapture && $piece->isValidMove($fromRow, $fromCol, $toRow, $toCol, $this->board);
-    }
-
-    private function findCaptureOption(array $possibleCaptures, int $toRow, int $toCol): ?array
-    {
-        foreach ($possibleCaptures as $option) {
-            if ($option['toRow'] === $toRow && $option['toCol'] === $toCol) {
-                return $option;
-            }
-        }
-        return null;
-    }
-
-    private function processCapture(int $fromRow, int $fromCol, int $toRow, int $toCol, array $capturedPieces): void
-    {
-        foreach ($capturedPieces as $captured) {
-            $this->board->removePiece($captured['row'], $captured['col']);
+            return false;
         }
 
-        $this->board->movePiece($fromRow, $fromCol, $toRow, $toCol);
-        $this->showMessage('Взято!', 'success');
-
-        $movedPiece = $this->board->getPiece($toRow, $toCol);
-        if ($movedPiece && $movedPiece->canCapture($toRow, $toCol, $this->board)) {
-            $this->selectedCell = ['row' => $toRow, 'col' => $toCol];
-            $this->showMessage('Ви повинні продовжити бити!', 'info');
-            return;
-        }
-
-        $this->switchPlayer();
-        $this->checkGameEnd();
+        $currentMessage = $this->messageService->getMessage();
+        return $currentMessage === 'Ви повинні продовжити бити!' &&
+            $piece->canCapture($row, $col, $this->board);
     }
 
-    private function processRegularMove(int $fromRow, int $fromCol, int $toRow, int $toCol): void
+    private function processBotTurnIfNeeded(): void
     {
-        $this->board->movePiece($fromRow, $fromCol, $toRow, $toCol);
-        $this->showMessage('Хід зроблено.', 'info');
-        $this->switchPlayer();
-        $this->checkGameEnd();
-    }
-
-
-
-    private function selectPiece(int $row, int $col): void
-    {
-        $piece = $this->board->getPiece($row, $col);
-        if ($piece && $piece->getColor() === $this->currentPlayer) {
-            $hasPlayerCaptures = $this->playerHasCaptures($this->currentPlayer);
-            $pieceCanCapture = $piece->canCapture($row, $col, $this->board);
-
-            if ($hasPlayerCaptures && !$pieceCanCapture) {
-                $this->showMessage('Ви повинні бити, якщо це можливо! Виберіть фігуру, яка може бити.', 'error');
-                return;
-            }
-            $this->selectedCell = ['row' => $row, 'col' => $col];
-            $this->showMessage('Фігуру вибрано. Зробіть хід.', 'info');
-        } else {
-            $this->showMessage('Виберіть свою фігуру.', 'error');
+        if ($this->shouldBotMove()) {
+            $this->botService->makeBotMove($this->gameState, $this->gameEndDetector);
         }
     }
 
-    private function clearSelection(): void
+    public function cancelSelection(): void
     {
-        $this->selectedCell = null;
+        $this->clearSelection();
     }
-
-    private function switchPlayer(): void
+    public function clearSelection(): void
     {
-        $this->currentPlayer = ($this->currentPlayer === 'white') ? 'black' : 'white';
-        if ($this->message !== 'Ви повинні продовжити бити!') {
-            $this->showMessage($this->currentPlayer === 'white' ? 'Хід білих.' : 'Хід чорних.', 'info');
-        }
+        $this->gameState->clearSelection();
+        $this->messageService->showMessage('', 'info');
     }
-
-    private function checkGameEnd(): void
-    {
-        if ($this->isVictory('white'))
-            return;
-        if ($this->isVictory('black'))
-            return;
-        if ($this->isStalemate($this->currentPlayer))
-            return;
-    }
-    private function isVictory(string $color): bool
-    {
-        $remaining = $this->board->countPieces($color);
-        if ($remaining === 0) {
-            $this->gameOver = true;
-            $winner = $color === 'white' ? 'Чорні' : 'Білі';
-            $this->gameStatus = "$winner перемогли";
-            $this->showMessage("{$winner} перемогли!", 'success');
-            return true;
-        }
-        return false;
-    }
-
-    private function isStalemate(string $player): bool
-    {
-        if (!$this->playerHasValidMoves($player)) {
-            $this->gameOver = true;
-            $this->gameStatus = 'Пат';
-            $this->showMessage("Пат! Гра закінчилася нічиєю, у " . ($player === 'white' ? 'білих' : 'чорних') . " немає дійсних ходів.", 'info');
-            return true;
-        }
-        return false;
-    }
-
-
-    public function playerHasValidMoves(string $color): bool
-    {
-        $hasCaptures = $this->playerHasCaptures($color);
-
-        for ($r = 0; $r < 8; $r++) {
-            for ($c = 0; $c < 8; $c++) {
-                $piece = $this->board->getPiece($r, $c);
-
-                if ($this->isPlayerPiece($piece, $color)) {
-                    if ($hasCaptures && $this->canPieceCapture($piece, $r, $c)) {
-                        return true;
-                    }
-
-                    if (!$hasCaptures && $this->canPieceMove($piece, $r, $c)) {
-                        return true;
-                    }
-                }
-            }
-        }
-
-        return false;
-    }
-    private function isPlayerPiece(?PieceInterface $piece, string $color): bool
-    {
-        return $piece !== null && $piece->getColor() === $color;
-    }
-
-    private function canPieceCapture(PieceInterface $piece, int $row, int $col): bool
-    {
-        return !empty($piece->getPossibleCaptures($row, $col, $this->board));
-    }
-
-    private function canPieceMove(PieceInterface $piece, int $row, int $col): bool
-    {
-        return !empty($piece->getPossibleMoves($row, $col, $this->board));
-    }
-
-
     public function playerHasCaptures(string $color): bool
     {
         for ($r = 0; $r < 8; $r++) {
@@ -335,124 +235,98 @@ class GameManager
         return false;
     }
 
-    private function makeBotMove(): void
+    private function handleMoveAttempt(int $row, int $col): void
     {
-        if ($this->bot === null || $this->gameOver || $this->currentPlayer !== 'black') {
+        $selectedCell = $this->gameState->getSelectedCell();
+        $validationResult = $this->playerActionHandler->attemptMove(
+            $selectedCell['row'],
+            $selectedCell['col'],
+            $row,
+            $col,
+            $this->gameState
+        );
+
+        if (!$validationResult->isValid()) {
+            $this->messageService->showMessage($validationResult->getErrorMessage(), 'error');
             return;
         }
 
-        $this->showMessage('Бот робить хід...', 'info');
-
-        session_write_close();
-        usleep(800000);
-        session_start();
-
-        $botMove = $this->bot->makeMove($this->board, 'black');
-
-        if (empty($botMove)) {
-            $this->endGameAsStalemate();
-            return;
+        if ($validationResult->hasCapture()) {
+            $this->processCapture($selectedCell['row'], $selectedCell['col'], $row, $col, $validationResult->getCaptureInfo()['captured']);
+        } else {
+            $this->processRegularMove($selectedCell['row'], $selectedCell['col'], $row, $col);
         }
-
-        [$fromRow, $fromCol, $toRow, $toCol] = [
-            $botMove['fromRow'],
-            $botMove['fromCol'],
-            $botMove['toRow'],
-            $botMove['toCol']
-        ];
-
-        $piece = $this->board->getPiece($fromRow, $fromCol);
-        if (!$this->isValidBotPiece($piece)) {
-            $this->showMessage('Помилка бота: невірна фігура для ходу.', 'error');
-            $this->switchPlayer();
-            return;
-        }
-
-        $captureInfo = $this->findCaptureOption($piece->getPossibleCaptures($fromRow, $fromCol, $this->board), $toRow, $toCol);
-
-        if ($captureInfo) {
-            $this->processBotCapture($fromRow, $fromCol, $toRow, $toCol, $captureInfo['captured']);
-            return;
-        }
-
-        $this->board->movePiece($fromRow, $fromCol, $toRow, $toCol);
-        $this->showMessage("Бот зробив хід на {$toRow},{$toCol}.", 'info');
-        $this->switchPlayer();
-        $this->checkGameEnd();
-    }
-    private function isValidBotPiece(?PieceInterface $piece): bool
-    {
-        return $piece !== null && $piece->getColor() === 'black';
     }
 
-    private function processBotCapture(int $fromRow, int $fromCol, int $toRow, int $toCol, array $capturedPieces): void
+    private function processCapture(int $fromRow, int $fromCol, int $toRow, int $toCol, array $capturedPieces): void
     {
-        foreach ($capturedPieces as $captured) {
-            $this->board->removePiece($captured['row'], $captured['col']);
-        }
+        $command = new CaptureMoveCommand($this->board, $fromRow, $fromCol, $toRow, $toCol, $capturedPieces, $this->messageService);
+        $command->execute();
 
-        $this->board->movePiece($fromRow, $fromCol, $toRow, $toCol);
-        $this->showMessage("Бот взяв фігуру на {$toRow},{$toCol}!", 'success');
-
-        if ($this->botCanContinueCapture($toRow, $toCol)) {
-            $this->showMessage('Бот продовжує бити!', 'info');
-            $this->makeBotMove();
+        $movedPiece = $this->board->getPiece($toRow, $toCol);
+        if ($movedPiece && $movedPiece->canCapture($toRow, $toCol, $this->board)) {
+            $this->gameState->setSelectedCell(['row' => $toRow, 'col' => $toCol]);
+            $this->messageService->showMessage('Ви повинні продовжити бити!', 'info');
             return;
         }
 
-        $this->switchPlayer();
-        $this->checkGameEnd();
+        $this->gameState->switchPlayer();
+        $this->gameState->clearSelection();
+        $this->gameEndDetector->checkGameEnd($this->gameState);
     }
 
-    private function botCanContinueCapture(int $row, int $col): bool
+    private function processRegularMove(int $fromRow, int $fromCol, int $toRow, int $toCol): void
     {
-        $movedPiece = $this->board->getPiece($row, $col);
-        return $movedPiece && $movedPiece->canCapture($row, $col, $this->board);
+        $command = new RegularMoveCommand($this->board, $fromRow, $fromCol, $toRow, $toCol, $this->messageService);
+        $command->execute();
+
+        $this->gameState->switchPlayer();
+        $this->gameState->clearSelection();
+        $this->gameEndDetector->checkGameEnd($this->gameState);
     }
 
-
-    private function endGameAsStalemate(): void
+    private function shouldBotMove(): bool
     {
-        $this->showMessage('Бот не може зробити хід. Пат!', 'info');
-        $this->gameOver = true;
-        $this->gameStatus = 'Пат';
+        return $this->gameState->getGameMode() === 'player_vs_bot' &&
+            !$this->gameState->isGameOver() &&
+            $this->gameState->getCurrentPlayer() === 'black';
     }
 
     public function getBoardData(): array
     {
         return $this->board->getBoardState();
     }
-    public function getBoard(): BoardInterface
+    public function getBoard(): Board
     {
         return $this->board;
     }
     public function getCurrentPlayer(): string
     {
-        return $this->currentPlayer;
+        return $this->gameState->getCurrentPlayer();
     }
     public function getSelectedCell(): ?array
     {
-        return $this->selectedCell;
+        return $this->gameState->getSelectedCell();
     }
     public function getGameStatus(): string
     {
-        return $this->gameStatus;
+        return $this->gameState->getGameStatus();
     }
     public function getMessage(): string
     {
-        return $this->message;
+        return $this->messageService->getMessage();
     }
     public function getMessageType(): string
     {
-        return $this->messageType;
-    }
-    public function showMessage(string $text, string $type = 'info'): void
-    {
-        $this->message = $text;
-        $this->messageType = $type;
+        return $this->messageService->getMessageType();
     }
     public function getGameMode(): string
     {
-        return $this->gameMode;
+        return $this->gameState->getGameMode();
     }
+    public function showMessage(string $text, string $type = 'info'): void
+    {
+        $this->messageService->showMessage($text, $type);
+    }
+
 }

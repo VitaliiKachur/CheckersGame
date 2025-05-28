@@ -6,6 +6,7 @@ require_once 'src/GameManager.php';
 require_once 'src/Bots/BotFactory.php';
 require_once 'src/Interfaces/BotInterface.php';
 require_once 'src/Board.php';
+require_once 'src/Validation/CheckersMoveValidator.php';
 
 
 function renderBoard(array $boardData, ?array $selectedCell, GameManager $gameManager): string

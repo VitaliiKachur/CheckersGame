@@ -38,6 +38,7 @@ class PlayerActionHandler
             $this->messageService->showMessage('Вибрана фігура не знайдена.', 'error');
             return new MoveValidationResult(false);
         }
+       
 
         return $this->moveValidator->validateMove($piece, $fromRow, $fromCol, $toRow, $toCol, $this->board);
     }
