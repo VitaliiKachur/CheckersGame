@@ -3,8 +3,10 @@ session_start();
 
 require_once 'src/Board.php';
 require_once 'src/GameManager.php';
-
+require_once 'src/Bots/BotFactory.php'; 
+require_once 'src/Interfaces/BotInterface.php'; 
 require_once 'src/Board.php';
+
 
 function renderCell(int $row, int $col, string $cellClass, string $selectedClass, string $possibleMoveClass, string $boxShadowStyle, $piece = null): string
 {
@@ -54,8 +56,7 @@ function renderBoard(array $boardData, ?array $selectedCell, GameManager $gameMa
 
     for ($row = 0; $row < 8; $row++) {
         for ($col = 0; $col < 8; $col++) {
-            // Нова функція для стилів ходів
-            $cellClass = getCellClass($row, $col);
+           
             [$possibleMoveClass, $boxShadowStyle] = getCellMoveStyles($row, $col, $filteredPossibleMoves);
 
 
@@ -64,7 +65,7 @@ function renderBoard(array $boardData, ?array $selectedCell, GameManager $gameMa
             $html .= renderCell(
                 $row,
                 $col,
-                 $cellClass,
+              //   $cellClass,
                 $selectedClass,
                 $possibleMoveClass,
                 $boxShadowStyle,
@@ -101,25 +102,27 @@ function isSelectedCell(?array $selectedCell, int $row, int $col): bool
 
 if (isset($_SESSION['game_state'])) {
     $gameManager = unserialize($_SESSION['game_state']);
-    if ($gameManager->getMessage() === 'Ви повинні продовжити бити!' && $gameManager->getSelectedCell() !== null) {
-
+    if ($gameManager === false || !($gameManager instanceof GameManager)) {
+        error_log("Failed to unserialize game state. Re-initializing.");
+        session_unset();
+        session_destroy();
+        $gameManager = GameManager::getInstance();
     } else {
-        $gameManager->showMessage('');
+        if ($gameManager->getMessage() === 'Ви повинні продовжити бити!' && $gameManager->getSelectedCell() !== null) {
+            // Keep the message
+        } else {
+            $gameManager->showMessage(''); 
+        }
     }
 } else {
     $gameManager = GameManager::getInstance();
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (isset($_POST['action']) && $_POST['action'] === 'reset') {
-        $gameManager->resetGame('player_vs_player');
-    }
-}
-
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['action'])) {
         if ($_POST['action'] === 'reset') {
-            $gameManager->resetGame('player_vs_player'); 
+            $gameMode = $_POST['game_mode'] ?? 'player_vs_player'; // Отримуємо режим з форми
+            $gameManager->resetGame($gameMode);
         } elseif ($_POST['action'] === 'move') {
             $row = isset($_POST['row']) ? (int) $_POST['row'] : null;
             $col = isset($_POST['col']) ? (int) $_POST['col'] : null;
@@ -128,13 +131,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+
+if ($gameManager->getGameMode() === 'player_vs_bot' && $gameManager->getCurrentPlayer() === 'black' && $gameManager->getGameStatus() !== 'Пат' && $gameManager->getGameStatus() !== 'Чорні перемогли') {
+    $gameManager->makeBotMove();
+}
+
+
+$_SESSION['game_state'] = serialize($gameManager);
+
+
 $boardData = $gameManager->getBoardData();
 $currentPlayer = $gameManager->getCurrentPlayer();
-$selectedCell = $gameManager->getSelectedCell(); 
+$selectedCell = $gameManager->getSelectedCell();
 $gameStatus = $gameManager->getGameStatus();
 $message = $gameManager->getMessage();
 $messageType = $gameManager->getMessageType();
-$gameMode = $gameManager->getGameMode(); 
+$gameMode = $gameManager->getGameMode();
 
 ?>
 <!DOCTYPE html>
@@ -305,24 +317,47 @@ $gameMode = $gameManager->getGameMode();
             border: 2px solid #6B8E23;
             box-sizing: border-box;
         }
+         .message.error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .game-mode-selection { margin-bottom: 20px; }
+        .game-mode-selection label { margin-right: 10px; font-weight: bold; }
+        .game-mode-selection select,
+        .game-mode-selection button { padding: 8px 12px; border-radius: 5px; border: 1px solid #ccc; font-size: 1em; cursor: pointer; }
+        .game-mode-selection button { background-color: #007bff; color: white; border-color: #007bff; margin-left: 10px; }
+        .game-mode-selection button:hover { background-color: #0056b3; }
     </style>
 </head>
 
 <body>
+    <body>
     <div class="game-container">
-
         <h1>🏁 Шашки 🏁</h1>
+
         <div class="game-info">
             <div>Поточний гравець: <strong><?php echo ucfirst($currentPlayer); ?></strong></div>
             <div>Статус: <span><?php echo $gameStatus; ?></span></div>
         </div>
 
-        <!--  echo renderBoard($boardData); ?>  -->
+        <div class="game-mode-selection">
+            <form action="index.php" method="post" style="display:inline-block;">
+                <label for="game_mode">Режим гри:</label>
+                <select name="game_mode" id="game_mode">
+                    <option value="player_vs_player" <?php echo ($gameMode === 'player_vs_player') ? 'selected' : ''; ?>>
+                        Гравець проти гравця</option>
+                    <option value="player_vs_bot" <?php echo ($gameMode === 'player_vs_bot') ? 'selected' : ''; ?>>Гравець
+                        проти бота</option>
+                </select>
+                <input type="hidden" name="action" value="reset">
+                <button type="submit">Почати нову гру</button>
+            </form>
+        </div>
+
+        <?php echo renderBoard($boardData, $selectedCell, $gameManager); ?>
 
         <div class="controls">
             <form action="index.php" method="post">
                 <input type="hidden" name="action" value="reset">
-                <button type="submit" class="btn">🔄 Перезапустити гру</button>
+                <input type="hidden" name="game_mode" value="<?php echo htmlspecialchars($gameMode); ?>">
+                <button type="submit" class="btn">🔄 Перезапустити поточну гру</button>
             </form>
         </div>
 
@@ -331,8 +366,7 @@ $gameMode = $gameManager->getGameMode();
                 <?php echo $message; ?>
             </div>
         <?php endif; ?>
-        <div class="game-container">
-            <?php echo renderBoard($boardData, $selectedCell, $gameManager); ?>
+    </div>
             <script>
                 document.addEventListener('DOMContentLoaded', () => {
                     const board = document.getElementById('board');
