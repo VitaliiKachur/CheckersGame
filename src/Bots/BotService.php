@@ -23,27 +23,28 @@ class BotService
 
     public function makeBotMove(GameState $gameState, GameEndDetector $gameEndDetector): void
     {
-        if ($this->bot === null || $gameState->isGameOver() || $gameState->getCurrentPlayer() !== 'black') {
+        if ($this->bot === null || $gameState->isGameOver() || !$gameState->isBotTurn()) {
             return;
         }
 
+        $botColor = $gameState->getBotColor();
         $this->messageService->showMessage('Бот робить хід...', 'info');
 
         session_write_close();
         usleep(800000);
         session_start();
 
-        $botMove = $this->bot->makeMove($this->board, 'black');
+        $botMove = $this->bot->makeMove($this->board, $botColor);
 
         if (empty($botMove)) {
             $this->endGameAsStalemate($gameState);
             return;
         }
 
-        $this->executeBotMove($botMove, $gameState, $gameEndDetector);
+        $this->executeBotMove($botMove, $gameState, $gameEndDetector, $botColor);
     }
 
-    private function executeBotMove(array $botMove, GameState $gameState, GameEndDetector $gameEndDetector): void
+    private function executeBotMove(array $botMove, GameState $gameState, GameEndDetector $gameEndDetector, string $botColor): void
     {
         [$fromRow, $fromCol, $toRow, $toCol] = [
             $botMove['fromRow'], $botMove['fromCol'], 
@@ -51,7 +52,7 @@ class BotService
         ];
 
         $piece = $this->board->getPiece($fromRow, $fromCol);
-        if (!$this->isValidBotPiece($piece)) {
+        if (!$this->isValidBotPiece($piece, $botColor)) {
             $this->messageService->showMessage('Помилка бота: невірна фігура для ходу.', 'error');
             $gameState->switchPlayer();
             return;
@@ -87,9 +88,9 @@ class BotService
         }
     }
 
-    private function isValidBotPiece(?PieceInterface $piece): bool
+    private function isValidBotPiece(?PieceInterface $piece, string $botColor): bool
     {
-        return $piece !== null && $piece->getColor() === 'black';
+        return $piece !== null && $piece->getColor() === $botColor;
     }
 
     private function findCaptureOption(array $possibleCaptures, int $toRow, int $toCol): ?array

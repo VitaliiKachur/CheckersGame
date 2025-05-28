@@ -190,6 +190,7 @@ h1 {
 }
 
 .game-mode-selection button {
+    margin-top: 15px;
     background-color: #007bff;
     color: white;
     border-color: #007bff;

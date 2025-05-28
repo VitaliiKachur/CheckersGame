@@ -8,7 +8,6 @@ require_once 'src/Interfaces/BotInterface.php';
 require_once 'src/Board.php';
 require_once 'src/Validation/CheckersMoveValidator.php';
 
-
 function renderBoard(array $boardData, ?array $selectedCell, GameManager $gameManager): string
 {
     $html = '<div class="board" id="board">';
@@ -75,13 +74,25 @@ function getFilteredPossibleMoves(?array $selectedCell, array $boardData, GameMa
 
     $selectedPiece = $boardData[$selectedCell['row']][$selectedCell['col']] ?? null;
 
-    if (!$selectedPiece || $selectedPiece->getColor() !== $gameManager->getCurrentPlayer()) {
+    if (!$selectedPiece) {
         return [];
+    }
+
+
+    if ($gameManager->getGameMode() === 'player_vs_bot') {
+        if ($selectedPiece->getColor() !== $gameManager->getHumanPlayerColor()) {
+            return [];
+        }
+    } else {
+
+        if ($selectedPiece->getColor() !== $gameManager->getCurrentPlayer()) {
+            return [];
+        }
     }
 
     $possibleMoves = $selectedPiece->getPossibleMoves($selectedCell['row'], $selectedCell['col'], $gameManager->getBoard());
 
-    $playerHasCaptures = $gameManager->playerHasCaptures($gameManager->getCurrentPlayer());
+    $playerHasCaptures = $gameManager->playerHasCaptures($selectedPiece->getColor());
 
     if ($playerHasCaptures) {
         return array_filter($possibleMoves, fn($move) => $move['isCapture']);
@@ -112,7 +123,7 @@ if (isset($_SESSION['game_state'])) {
     $gameManager = unserialize($_SESSION['game_state']);
     if ($gameManager->getMessage() === 'Ви повинні продовжити бити!' && $gameManager->getSelectedCell() !== null) {
     } else {
-        $gameManager->showMessage(''); 
+        $gameManager->showMessage('');
     }
 } else {
     $gameManager = GameManager::getInstance();
@@ -122,7 +133,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['action'])) {
         if ($_POST['action'] === 'reset') {
             $gameMode = $_POST['game_mode'] ?? 'player_vs_player';
-            $gameManager->resetGame($gameMode);
+            $humanPlayerColor = $_POST['player_color'] ?? 'white';
+            $gameManager->resetGame($gameMode, $humanPlayerColor);
         } elseif ($_POST['action'] === 'move') {
             $row = isset($_POST['row']) ? (int) $_POST['row'] : null;
             $col = isset($_POST['col']) ? (int) $_POST['col'] : null;
@@ -131,10 +143,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-if ($gameManager->getGameMode() === 'player_vs_bot' && 
-    $gameManager->getCurrentPlayer() === 'black' && 
-    $gameManager->getGameStatus() !== 'Пат' && 
-    $gameManager->getGameStatus() !== 'Чорні перемогли') {
+
+if (
+    $gameManager->getGameMode() === 'player_vs_bot' &&
+    !$gameManager->getGameState()->isHumanTurn() &&
+    $gameManager->getGameStatus() !== 'Пат' &&
+    !strpos($gameManager->getGameStatus(), 'перемогли')
+) {
     $gameManager->makeBotMove();
 }
 
@@ -147,4 +162,5 @@ $gameStatus = $gameManager->getGameStatus();
 $message = $gameManager->getMessage();
 $messageType = $gameManager->getMessageType();
 $gameMode = $gameManager->getGameMode();
+$humanPlayerColor = $gameManager->getHumanPlayerColor();
 ?>
