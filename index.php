@@ -4,15 +4,29 @@ session_start();
 require_once 'src/Board.php';
 require_once 'src/GameManager.php';
 
-function getCellClass(int $row, int $col): string
-{ /* ... */
-}
+// function getCellClass(int $row, int $col): string
+// { /* ... */
+// }
 function renderCell(int $row, int $col, string $cellClass, string $selectedClass, string $possibleMoveClass, string $boxShadowStyle, $piece = null): string
-{ /* ... */
+{
+    $html = "<form action='index.php' method='post' style='display:inline;'>";
+    $html .= "<input type='hidden' name='action' value='move'>"; // Додаємо input для action=move
+    $html .= "<input type='hidden' name='row' value='{$row}'>";
+    $html .= "<input type='hidden' name='col' value='{$col}'>";
+    $html .= "<button type='submit' class='cell {$cellClass} {$selectedClass} {$possibleMoveClass}' data-row='{$row}' data-col='{$col}' style='box-shadow: {$boxShadowStyle};'>";
+
+    if ($piece instanceof PieceInterface) { // Тепер перевіряємо на інтерфейс
+        $kingClass = $piece->isKing() ? ' king' : '';
+        $html .= "<div class='piece {$piece->getColor()}{$kingClass}'></div>";
+    }
+
+    $html .= "</button></form>";
+
+    return $html;
 }
-function renderBoard(array $boardData): string
-{ /* ... */
-}
+// function renderBoard(array $boardData): string
+// { /* ... */
+// }
 
 
 if (isset($_SESSION['game_state'])) {
@@ -208,7 +222,7 @@ $gameMode = $gameManager->getGameMode();
             <div>Статус: <span><?php echo $gameStatus; ?></span></div>
         </div>
 
-        <?php echo renderBoard($boardData); ?>
+        <!--  echo renderBoard($boardData); ?>  -->
 
         <div class="controls">
             <form action="index.php" method="post">
