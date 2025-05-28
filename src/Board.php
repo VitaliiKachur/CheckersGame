@@ -8,64 +8,88 @@ require_once 'src/PieceFactory.php';
 
 class Board implements BoardInterface
 {
-    private array $board;
+    private array $board; 
 
     public function __construct()
     {
         $this->initializeBoard();
     }
 
+
     private function initializeBoard(): void
     {
-        $this->board = array_fill(0, 8, array_fill(0, 8, null));
+        $this->board = $this->createEmptyBoard();
+        $this->placePieces('black', 0, 3);
+        $this->placePieces('white', 5, 8);
+    }
 
-        // Розстановка шашок за допомогою PieceFactory
-        for ($row = 0; $row < 3; $row++) {
-            for ($col = 0; $col < 8; $col++) {
-                if (($row + $col) % 2 !== 0) {
-                    $this->board[$row][$col] = PieceFactory::createPiece('black');
-                }
-            }
-        }
+    private function createEmptyBoard(): array
+    {
+        return array_fill(0, 8, array_fill(0, 8, null));
+    }
 
-        for ($row = 5; $row < 8; $row++) {
+    private function placePieces(string $color, int $startRow, int $endRow): void
+    {
+        for ($row = $startRow; $row < $endRow; $row++) {
             for ($col = 0; $col < 8; $col++) {
-                if (($row + $col) % 2 !== 0) {
-                    $this->board[$row][$col] = PieceFactory::createPiece('white');
+                if ($this->isPlayableCell($row, $col)) {
+                    $this->board[$row][$col] = PieceFactory::createPiece($color);
                 }
             }
         }
     }
 
-    public function getPiece(int $row, int $col): ?PieceInterface
+    private function isPlayableCell(int $row, int $col): bool
     {
-        if ($row < 0 || $row >= 8 || $col < 0 || $col >= 8) {
-            return null; // Запобігаємо виходу за межі масиву
+        return ($row + $col) % 2 === 1;
+    }
+
+
+    public function getBoardState(): array
+    {
+        return $this->board;
+    }
+    public function getPiece(int $row, int $col): ?Piece
+    {
+        if (!isset($this->board[$row][$col])) { 
+            return null;
         }
         return $this->board[$row][$col];
     }
-    public function setPiece(int $row, int $col, ?PieceInterface $piece): void
+    public function setPiece(int $row, int $col, ?Piece $piece): void
     {
         $this->board[$row][$col] = $piece;
     }
-
-    public function movePiece(int $fromRow, int $fromCol, int $toRow, int $toCol): void
+    public function hasPiece(int $row, int $col): bool
     {
-        $piece = $this->board[$fromRow][$fromCol];
-        if ($piece) {
-            $this->board[$toRow][$toCol] = $piece;
-            $this->board[$fromRow][$fromCol] = null;
-        }
+        return isset($this->board[$row][$col]) && $this->board[$row][$col] !== null;
     }
-
     public function removePiece(int $row, int $col): void
     {
         $this->board[$row][$col] = null;
     }
 
-    public function getBoardState(): array
+    public function movePiece(int $fromRow, int $fromCol, int $toRow, int $toCol): void
     {
-        return $this->board;
+        $piece = $this->getPiece($fromRow, $fromCol);
+        if ($piece) {
+            $this->setPiece($toRow, $toCol, $piece);
+            $this->removePiece($fromRow, $fromCol);
+            $this->checkKingStatus($toRow, $toCol);
+        }
+    }
+
+    private function checkKingStatus(int $row, int $col): void
+    {
+        $piece = $this->getPiece($row, $col);
+        if ($piece && !$piece->isKing()) {
+            if (
+                ($piece->getColor() === 'white' && $row === 0) ||
+                ($piece->getColor() === 'black' && $row === 7)
+            ) {
+                $piece->makeKing();
+            }
+        }
     }
 
     public function countPieces(string $color): int
@@ -73,14 +97,11 @@ class Board implements BoardInterface
         $count = 0;
         foreach ($this->board as $row) {
             foreach ($row as $piece) {
-                if (is_array($piece) && $piece['color'] === $color) { 
-                    $count++;
-                } elseif ($piece instanceof PieceInterface && $piece->getColor() === $color) {
+                if ($piece && $piece->getColor() === $color) {
                     $count++;
                 }
             }
         }
         return $count;
     }
-    
 }

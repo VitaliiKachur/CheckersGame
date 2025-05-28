@@ -2,26 +2,17 @@
 require_once 'src/Interfaces/PieceInterface.php';
 require_once 'src/Pieces/WhitePiece.php';
 require_once 'src/Pieces/BlackPiece.php';
-require_once 'src/Moves/RegularMoveStrategy.php'; // Буде створено пізніше
+require_once 'src/Moves/RegularMoveStrategy.php'; 
 
 class PieceFactory
 {
-    public static function createPiece(string $color, bool $isKing = false): PieceInterface
+    public static function createPiece(string $color, bool $isKing = false): Piece
     {
-        switch ($color) {
-            case 'white':
-                $piece = new WhitePiece();
-                break;
-            case 'black':
-                $piece = new BlackPiece();
-                break;
-            default:
-                throw new InvalidArgumentException("Невідомий колір шашки: $color");
+        if ($color === 'white') {
+            return new WhitePiece($isKing);
+        } elseif ($color === 'black') {
+            return new BlackPiece($isKing);
         }
-        if ($isKing) {
-            $piece->promote();
-        }
-        $piece->setMoveStrategy(new RegularMoveStrategy()); 
-        return $piece;
+        throw new InvalidArgumentException("Недійсний колір фігури: $color");
     }
 }

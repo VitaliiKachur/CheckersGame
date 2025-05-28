@@ -4,15 +4,8 @@ require_once 'src/Moves/RegularMoveStrategy.php';
 
 class BlackPiece extends Piece
 {
-    public function __construct()
+    public function __construct(bool $isKing = false)
     {
-        parent::__construct('black');
-        $this->setMoveStrategy(new RegularMoveStrategy());
-    }
-
-    public function promote(): void
-    {
-        parent::promote();
-        $this->setMoveStrategy(new KingMoveStrategy()); // Буде створено KingMoveStrategy
+        parent::__construct('black', $isKing);
     }
 }

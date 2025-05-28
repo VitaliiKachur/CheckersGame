@@ -3,109 +3,121 @@ require_once 'src/Interfaces/MoveStrategyInterface.php';
 require_once 'src/Interfaces/BoardInterface.php';
 require_once 'src/Interfaces/PieceInterface.php';
 
-class KingMoveStrategy implements MoveStrategyInterface
+class KingMoveStrategy implements MoveStrategy
 {
-    public function isValidMove(int $fromRow, int $fromCol, int $toRow, int $toCol, BoardInterface $board, string $pieceColor): bool
+    public function isValidMove(int $fromRow, int $fromCol, int $toRow, int $toCol, BoardInterface $board, PieceInterface $piece): bool
     {
-        // Заглушка: дамки можуть рухатися по діагоналі на будь-яку відстань
-        if (abs($fromRow - $toRow) !== abs($fromCol - $toCol)) {
-            return false; // Тільки діагональні ходи
-        }
-
-        $rowStep = ($toRow > $fromRow) ? 1 : -1;
-        $colStep = ($toCol > $fromCol) ? 1 : -1;
-
-        $curRow = $fromRow + $rowStep;
-        $curCol = $fromCol + $colStep;
-
-        while ($curRow !== $toRow) {
-            if ($board->getPiece($curRow, $curCol) !== null) {
-                return false; // Шлях заблокований
-            }
-            $curRow += $rowStep;
-            $curCol += $colStep;
-        }
-
-        // Перевірка цільової клітинки
-        return $board->getPiece($toRow, $toCol) === null;
+        return $this->isDiagonalMove($fromRow, $fromCol, $toRow, $toCol)
+            && $this->isTargetEmpty($toRow, $toCol, $board)
+            && $this->isPathClear($fromRow, $fromCol, $toRow, $toCol, $board);
     }
 
-    public function getPossibleMoves(int $row, int $col, BoardInterface $board, string $pieceColor): array
+    public function canCapture(int $fromRow, int $fromCol, int $toRow, int $toCol, BoardInterface $board, PieceInterface $piece): array
     {
-        $moves = [];
-        $directions = [
-            ['row' => -1, 'col' => -1], ['row' => -1, 'col' => 1],
-            ['row' => 1, 'col' => -1], ['row' => 1, 'col' => 1],
-        ];
-
-        foreach ($directions as $dir) {
-            for ($i = 1; $i < 8; $i++) { // Король може рухатись на будь-яку відстань
-                $toRow = $row + $i * $dir['row'];
-                $toCol = $col + $i * $dir['col'];
-
-                if ($toRow < 0 || $toRow >= 8 || $toCol < 0 || $toCol >= 8) {
-                    break; // Вийшли за межі дошки
-                }
-
-                if ($board->getPiece($toRow, $toCol) === null) {
-                    $moves[] = ['row' => $toRow, 'col' => $toCol, 'isCapture' => false];
-                } else {
-                    break; // Зустріли фігуру, не можемо пройти далі
-                }
-            }
+        if (!$this->isDiagonalMove($fromRow, $fromCol, $toRow, $toCol) || !$this->isTargetEmpty($toRow, $toCol, $board)) {
+            return [];
         }
-        return $moves;
+
+        return $this->findCapturableEnemy($fromRow, $fromCol, $toRow, $toCol, $board, $piece);
     }
 
-    public function getPossibleCaptures(int $row, int $col, BoardInterface $board, string $pieceColor): array
+    private function isDiagonalMove(int $r1, int $c1, int $r2, int $c2): bool
     {
-        $captures = [];
-        $directions = [
-            ['row' => -1, 'col' => -1], ['row' => -1, 'col' => 1],
-            ['row' => 1, 'col' => -1], ['row' => 1, 'col' => 1],
-        ];
+        return abs($r1 - $r2) === abs($c1 - $c2);
+    }
 
-        foreach ($directions as $dir) {
-            $capturedPiecesInDirection = [];
-            $foundOpponentPiece = false;
-            $opponentRow = -1;
-            $opponentCol = -1;
+    private function isTargetEmpty(int $row, int $col, BoardInterface $board): bool
+    {
+        return $board->getPiece($row, $col) === null;
+    }
 
-            for ($i = 1; $i < 8; $i++) {
-                $checkRow = $row + $i * $dir['row'];
-                $checkCol = $col + $i * $dir['col'];
+    private function isPathClear(int $fromR, int $fromC, int $toR, int $toC, BoardInterface $board): bool
+    {
+        [$rowStep, $colStep] = $this->getStep($fromR, $fromC, $toR, $toC);
 
-                if ($checkRow < 0 || $checkRow >= 8 || $checkCol < 0 || $checkCol >= 8) {
-                    break; // Вийшли за межі дошки
-                }
-
-                $checkedPiece = $board->getPiece($checkRow, $checkCol);
-
-                if ($checkedPiece === null) {
-                    if ($foundOpponentPiece) { // Після взяття місце вільне
-                        $captures[] = [
-                            'row' => $checkRow,
-                            'col' => $checkCol,
-                            'isCapture' => true,
-                            'captured' => $capturedPiecesInDirection // Взяті фігури на цьому ходу
-                        ];
-                    }
-                } else {
-                    if ($checkedPiece->getColor() === $pieceColor) {
-                        break; // Зустріли свою фігуру, не можемо пройти
-                    } else {
-                        // Знайшли фігуру противника
-                        if ($foundOpponentPiece) {
-                            break; // Вже знайшли одну фігуру противника, не можна бити дві
-                        }
-                        $foundOpponentPiece = true;
-                        $opponentRow = $checkRow;
-                        $opponentCol = $checkCol;
-                        $capturedPiecesInDirection[] = ['row' => $opponentRow, 'col' => $opponentCol];
-                    }
-                }
+        for ($r = $fromR + $rowStep, $c = $fromC + $colStep; $r !== $toR && $c !== $toC; $r += $rowStep, $c += $colStep) {
+            if (!$this->isInBounds($r, $c) || $board->getPiece($r, $c) !== null) {
+                return false;
             }
         }
-        return $captures;
+
+        return true;
+    }
+
+    private function findCapturableEnemy(
+        int $fromR,
+        int $fromC,
+        int $toR,
+        int $toC,
+        BoardInterface $board,
+        PieceInterface $piece
+    ): array {
+        [$rowStep, $colStep] = $this->getStep($fromR, $fromC, $toR, $toC);
+
+        $piecesOnPath = $this->getPiecesOnPath($fromR, $fromC, $toR, $toC, $rowStep, $colStep, $board);
+
+        return $this->analyzeCapturedPieces($piecesOnPath, $piece);
+    }
+
+    private function getPiecesOnPath(
+        int $fromR,
+        int $fromC,
+        int $toR,
+        int $toC,
+        int $rowStep,
+        int $colStep,
+        BoardInterface $board
+    ): array {
+        $pieces = [];
+
+        for (
+            $r = $fromR + $rowStep, $c = $fromC + $colStep;
+            $r !== $toR && $c !== $toC;
+            $r += $rowStep, $c += $colStep
+        ) {
+            if (!$this->isInBounds($r, $c)) {
+                return [];
+            }
+
+            $current = $board->getPiece($r, $c);
+            if ($current !== null) {
+                $pieces[] = ['row' => $r, 'col' => $c, 'piece' => $current];
+            }
+        }
+
+        return $pieces;
+    }
+
+    private function analyzeCapturedPieces(array $piecesOnPath, PieceInterface $piece): array
+    {
+        $enemyFound = false;
+        $captured = [];
+
+        foreach ($piecesOnPath as $pos) {
+            $currentPiece = $pos['piece'];
+            if ($currentPiece->getColor() === $piece->getColor()) {
+                return [];
+            }
+            if ($enemyFound) {
+                return [];
+            }
+            $captured[] = ['row' => $pos['row'], 'col' => $pos['col']];
+            $enemyFound = true;
+        }
+
+        return count($captured) === 1 ? $captured : [];
+    }
+
+
+    private function getStep(int $fromR, int $fromC, int $toR, int $toC): array
+    {
+        $rowStep = $toR > $fromR ? 1 : -1;
+        $colStep = $toC > $fromC ? 1 : -1;
+        return [$rowStep, $colStep];
+    }
+
+    private function isInBounds(int $row, int $col): bool
+    {
+        return $row >= 0 && $row < 8 && $col >= 0 && $col < 8;
     }
 }

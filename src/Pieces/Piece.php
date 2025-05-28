@@ -1,64 +1,98 @@
 <?php
 require_once 'src/Interfaces/PieceInterface.php';
-require_once 'src/Interfaces/MoveStrategyInterface.php'; // Буде створено пізніше
+require_once 'src/Interfaces/MoveStrategyInterface.php';
 
 abstract class Piece implements PieceInterface
 {
     protected string $color;
-    protected bool $isKing = false;
-    protected MoveStrategyInterface $moveStrategy; 
+    protected bool $isKing;
+    protected ?MoveStrategy $moveStrategy = null; 
 
-    public function __construct(string $color)
+    public function __construct(string $color, bool $isKing = false)
     {
         $this->color = $color;
+        $this->isKing = $isKing;
+        $this->setMoveStrategy();
+    }
+
+    public function __wakeup()
+    {
+        $this->setMoveStrategy();
     }
 
     public function getColor(): string
     {
         return $this->color;
     }
-
     public function isKing(): bool
     {
         return $this->isKing;
     }
-
-    public function promote(): void
+    public function makeKing(): void
     {
         $this->isKing = true;
+        $this->setMoveStrategy();
+    }
+
+    private function setMoveStrategy(): void
+    {
+        $this->moveStrategy = $this->isKing ? new KingMoveStrategy() : new RegularMoveStrategy();
     }
 
     public function isValidMove(int $fromRow, int $fromCol, int $toRow, int $toCol, BoardInterface $board): bool
     {
-        return $this->moveStrategy->isValidMove($fromRow, $fromCol, $toRow, $toCol, $board, $this->color);
+        if ($this->moveStrategy === null)
+            $this->setMoveStrategy(); 
+        return $this->moveStrategy->isValidMove($fromRow, $fromCol, $toRow, $toCol, $board, $this);
     }
 
-    public function canCapture(int $row, int $col, BoardInterface $board): bool
+    public function canCapture(int $fromRow, int $fromCol, BoardInterface $board): bool
     {
-        return !empty($this->moveStrategy->getPossibleCaptures($row, $col, $board, $this->color));
+        if ($this->moveStrategy === null)
+            $this->setMoveStrategy();
+        for ($r = 0; $r < 8; $r++) {
+            for ($c = 0; $c < 8; $c++) {
+                if (!empty($this->moveStrategy->canCapture($fromRow, $fromCol, $r, $c, $board, $this))) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     public function getPossibleMoves(int $row, int $col, BoardInterface $board): array
     {
-        return $this->moveStrategy->getPossibleMoves($row, $col, $board, $this->color);
+        if ($this->moveStrategy === null)
+            $this->setMoveStrategy(); 
+        $moves = [];
+        for ($r = 0; $r < 8; $r++) {
+            for ($c = 0; $c < 8; $c++) {
+                $capturesForThisPiece = $this->moveStrategy->canCapture($row, $col, $r, $c, $board, $this);
+                if (!empty($capturesForThisPiece)) {
+                    $moves[] = ['row' => $r, 'col' => $c, 'isCapture' => true, 'captured' => $capturesForThisPiece];
+                } elseif (!$board->getPiece($row, $col)->canCapture($row, $col, $board)) { 
+                    if ($this->isValidMove($row, $col, $r, $c, $board)) {
+                        $moves[] = ['row' => $r, 'col' => $c, 'isCapture' => false];
+                    }
+                }
+            }
+        }
+        return $moves;
     }
 
     public function getPossibleCaptures(int $row, int $col, BoardInterface $board): array
     {
-        return $this->moveStrategy->getPossibleCaptures($row, $col, $board, $this->color);
-    }
-
-    public function setMoveStrategy(MoveStrategyInterface $strategy): void
-    {
-        $this->moveStrategy = $strategy;
-    }
-
-    public function __wakeup()
-    {
-        if ($this->isKing()) {
-            $this->setMoveStrategy(new KingMoveStrategy());
-        } else {
-            $this->setMoveStrategy(new RegularMoveStrategy());
+        if ($this->moveStrategy === null)
+            $this->setMoveStrategy(); 
+        $captures = [];
+        for ($r = 0; $r < 8; $r++) {
+            for ($c = 0; $c < 8; $c++) {
+                $captured = $this->moveStrategy->canCapture($row, $col, $r, $c, $board, $this);
+                if (!empty($captured)) {
+                    $captures[] = ['toRow' => $r, 'toCol' => $c, 'captured' => $captured];
+                }
+            }
         }
+        return $captures;
     }
 }

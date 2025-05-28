@@ -2,87 +2,53 @@
 <?php
 require_once 'src/Interfaces/MoveStrategyInterface.php';
 require_once 'src/Interfaces/BoardInterface.php';
-require_once 'src/Interfaces/PieceInterface.php'; // Для type hinting
+require_once 'src/Interfaces/PieceInterface.php'; 
 
-class RegularMoveStrategy implements MoveStrategyInterface
+class RegularMoveStrategy implements MoveStrategy
 {
-    public function isValidMove(int $fromRow, int $fromCol, int $toRow, int $toCol, BoardInterface $board, string $pieceColor): bool
+    public function isValidMove(int $fromRow, int $fromCol, int $toRow, int $toCol, BoardInterface $board, PieceInterface $piece): bool
     {
-        // Заглушка: поки що дозволяємо будь-який діагональний хід на 1 клітинку
-        $dr = abs($toRow - $fromRow);
-        $dc = abs($toCol - $fromCol);
-
-        if ($dr !== 1 || $dc !== 1) {
-            return false; // Тільки діагональні ходи на 1 клітинку
+        if (!($this->isDiagonal($fromRow, $fromCol, $toRow, $toCol) && $this->isOneStepForward($fromRow, $toRow, $piece->getColor()))) {
+            return false;
         }
+        return $board->getPiece($toRow, $toCol) === null;
+    }
 
-        // Перевірка на зайнятість цільової клітинки
+    public function canCapture(int $fromRow, int $fromCol, int $toRow, int $toCol, BoardInterface $board, PieceInterface $piece): array
+    {
+        if (!($this->isDiagonal($fromRow, $fromCol, $toRow, $toCol) && $this->isTwoStepsAway($fromRow, $toRow, $fromCol, $toCol))) {
+            return [];
+        }
         if ($board->getPiece($toRow, $toCol) !== null) {
-            return false;
+            return [];
         }
 
-        // Для білих шашок - тільки вперед (зменшення рядка)
-        if ($pieceColor === 'white' && $toRow >= $fromRow) {
-            return false;
-        }
-        // Для чорних шашок - тільки вперед (збільшення рядка)
-        if ($pieceColor === 'black' && $toRow <= $fromRow) {
-            return false;
-        }
+        $middleRow = ($fromRow + $toRow) / 2;
+        $middleCol = ($fromCol + $toCol) / 2;
+        $capturedPiece = $board->getPiece($middleRow, $middleCol);
 
-        return true;
+        if ($capturedPiece && $capturedPiece->getColor() !== $piece->getColor()) {
+            return [['row' => $middleRow, 'col' => $middleCol]];
+        }
+        return [];
     }
 
-    public function getPossibleMoves(int $row, int $col, BoardInterface $board, string $pieceColor): array
+    private function isDiagonal(int $r1, int $c1, int $r2, int $c2): bool
     {
-        $moves = [];
-        $direction = ($pieceColor === 'white') ? -1 : 1; // -1 для білих (вгору), 1 для чорних (вниз)
-
-        $possibleCoords = [
-            ['row' => $row + $direction, 'col' => $col - 1],
-            ['row' => $row + $direction, 'col' => $col + 1],
-        ];
-
-        foreach ($possibleCoords as $coords) {
-            $toRow = $coords['row'];
-            $toCol = $coords['col'];
-
-            if ($toRow >= 0 && $toRow < 8 && $toCol >= 0 && $toCol < 8 && $board->getPiece($toRow, $toCol) === null) {
-                $moves[] = ['row' => $toRow, 'col' => $toCol, 'isCapture' => false];
-            }
-        }
-        return $moves;
+        return abs($r1 - $r2) === abs($c1 - $c2);
     }
 
-    public function getPossibleCaptures(int $row, int $col, BoardInterface $board, string $pieceColor): array
+    private function isOneStepForward(int $fromR, int $toR, string $color): bool
     {
-        $captures = [];
-        $directions = [
-            ['row' => -1, 'col' => -1], ['row' => -1, 'col' => 1],
-            ['row' => 1, 'col' => -1], ['row' => 1, 'col' => 1],
-        ];
-
-        foreach ($directions as $dir) {
-            $captureRow = $row + $dir['row'];
-            $captureCol = $col + $dir['col'];
-            $toRow = $row + 2 * $dir['row'];
-            $toCol = $col + 2 * $dir['col'];
-
-            if (
-                $toRow >= 0 && $toRow < 8 && $toCol >= 0 && $toCol < 8 &&
-                $board->getPiece($toRow, $toCol) === null
-            ) {
-                $capturedPiece = $board->getPiece($captureRow, $captureCol);
-                if ($capturedPiece && $capturedPiece->getColor() !== $pieceColor) {
-                    $captures[] = [
-                        'row' => $toRow,
-                        'col' => $toCol,
-                        'isCapture' => true,
-                        'captured' => [['row' => $captureRow, 'col' => $captureCol]]
-                    ];
-                }
-            }
+        if ($color === 'white') {
+            return $toR === $fromR - 1;
+        } else { // black
+            return $toR === $fromR + 1;
         }
-        return $captures;
+    }
+
+    private function isTwoStepsAway(int $fromR, int $toR, int $fromC, int $toC): bool
+    {
+        return abs($fromR - $toR) === 2 && abs($fromC - $toC) === 2;
     }
 }
