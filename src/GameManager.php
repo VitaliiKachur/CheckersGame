@@ -1,8 +1,9 @@
 <?php
 
 require_once 'src/Board.php';
-require_once 'src/Interfaces/PieceInterface.php'; 
+require_once 'src/Interfaces/PieceInterface.php';
 require_once 'src/Moves/KingMoveStrategy.php';
+require_once 'src/Bots/BotFactory.php';
 
 class GameManager
 {
@@ -15,6 +16,7 @@ class GameManager
     private string $message;
     private string $messageType;
     private string $gameMode;
+    private ?BotInterface $bot = null;
 
     private function __construct()
     {
@@ -31,15 +33,14 @@ class GameManager
         $this->message = 'Нова гра розпочата.';
         $this->messageType = 'info';
         $this->gameMode = $gameMode;
+        $this->gameMode = $gameMode;
+        $this->bot = null; // Reset bot on new game
+        if ($this->gameMode === 'player_vs_bot') {
+            $this->bot = BotFactory::createBot('simple'); // Create a simple bot
+        }
+        $this->showMessage('Нова гра розпочата. ' . ($this->gameMode === 'player_vs_bot' ? 'Ви граєте проти бота.' : 'Гравець проти гравця.'), 'info');
     }
 
-    public function __wakeup()
-    {
-        if ($this->message !== 'Ви повинні продовжити бити!') {
-            $this->message = '';
-            $this->messageType = 'info';
-        }
-    }
 
     public static function getInstance(): GameManager
     {
@@ -59,30 +60,6 @@ class GameManager
             $this->showMessage('Гра закінчена. Натисніть "Нова гра" для початку.', 'info');
             return true;
         }
-        return false;
-    }
-    public function handleAction(?int $row, ?int $col): void
-    {
-
-        if ($this->isGameOver())
-            return;
-
-        if ($this->isInvalidCell($row, $col))
-            return;
-
-        if ($this->selectedCell) {
-            $this->handleMoveAttempt($row, $col);
-        } else {
-            $this->selectPiece($row, $col);
-        }
-   
-    }
-    private function isBotTurn(): bool
-    {
-        return false;
-    }
-    private function shouldBotMove(): bool
-    {
         return false;
     }
     private function isInvalidCell(?int $row, ?int $col): bool
@@ -134,15 +111,17 @@ class GameManager
     }
 
 
-  private function attemptMove(int $fromRow, int $fromCol, int $toRow, int $toCol): void
+    private function attemptMove(int $fromRow, int $fromCol, int $toRow, int $toCol): void
     {
         $piece = $this->board->getPiece($fromRow, $fromCol);
-        if (!$piece) return;
+        if (!$piece)
+            return;
 
         $captureInfo = $this->getCaptureInfo($piece, $fromRow, $fromCol, $toRow, $toCol);
         $hasMandatoryCapture = $this->playerHasCaptures($this->currentPlayer);
 
-        if ($this->isInvalidDueToMandatoryCapture($hasMandatoryCapture, $captureInfo)) return;
+        if ($this->isInvalidDueToMandatoryCapture($hasMandatoryCapture, $captureInfo))
+            return;
 
         if ($captureInfo) {
             $this->processCapture($fromRow, $fromCol, $toRow, $toCol, $captureInfo['captured']);
@@ -163,8 +142,8 @@ class GameManager
         $this->currentPlayer = ($this->currentPlayer === 'white') ? 'black' : 'white';
         $this->showMessage($this->currentPlayer === 'white' ? 'Хід білих.' : 'Хід чорних.', 'info');
     }
-  
-   public function playerHasCaptures(string $color): bool
+
+    public function playerHasCaptures(string $color): bool
     {
         for ($r = 0; $r < 8; $r++) {
             for ($c = 0; $c < 8; $c++) {
@@ -176,7 +155,7 @@ class GameManager
         }
         return false;
     }
-     private function isInvalidDueToMandatoryCapture(bool $hasMandatoryCapture, ?array $captureInfo): bool
+    private function isInvalidDueToMandatoryCapture(bool $hasMandatoryCapture, ?array $captureInfo): bool
     {
         if ($hasMandatoryCapture && !$captureInfo) {
             $this->showMessage('Ви повинні бити, якщо це можливо!', 'error');
@@ -184,12 +163,12 @@ class GameManager
         }
         return false;
     }
-     private function getCaptureInfo(PieceInterface $piece, int $fromRow, int $fromCol, int $toRow, int $toCol): ?array
+    private function getCaptureInfo(PieceInterface $piece, int $fromRow, int $fromCol, int $toRow, int $toCol): ?array
     {
         $possibleCaptures = $piece->getPossibleCaptures($fromRow, $fromCol, $this->board);
         return $this->findCaptureOption($possibleCaptures, $toRow, $toCol);
     }
-     private function findCaptureOption(array $possibleCaptures, int $toRow, int $toCol): ?array
+    private function findCaptureOption(array $possibleCaptures, int $toRow, int $toCol): ?array
     {
         foreach ($possibleCaptures as $option) {
             if ($option['row'] === $toRow && $option['col'] === $toCol) {
@@ -217,11 +196,11 @@ class GameManager
         if ($movedPiece && $movedPiece->canCapture($toRow, $toCol, $this->board)) {
             $this->selectedCell = ['row' => $toRow, 'col' => $toCol];
             $this->showMessage('Ви повинні продовжити бити!', 'info');
-            return; 
+            return;
         }
 
         $this->switchPlayer();
-        $this->checkGameEnd(); 
+        $this->checkGameEnd();
     }
 
     private function processRegularMove(int $fromRow, int $fromCol, int $toRow, int $toCol): void
@@ -229,7 +208,7 @@ class GameManager
         $this->board->movePiece($fromRow, $fromCol, $toRow, $toCol);
         $this->showMessage('Хід зроблено.', 'info');
         $this->switchPlayer();
-        $this->checkGameEnd(); 
+        $this->checkGameEnd();
     }
     public function getBoardData(): array
     {
@@ -334,4 +313,131 @@ class GameManager
     {
         return !empty($piece->getPossibleMoves($row, $col, $this->board));
     }
+
+
+    public function __wakeup()
+    {
+        // ... існуюча логіка ...
+        // Re-initialize bot if game mode is player_vs_bot and bot is null (e.g., if it wasn't serialized properly)
+        if ($this->gameMode === 'player_vs_bot' && $this->bot === null) {
+            $this->bot = BotFactory::createBot('simple');
+        }
+    }
+
+    public function handleAction(?int $row, ?int $col): void
+    {
+        if ($this->isGameOver()) return;
+        if ($this->isBotTurn()) return; // Перевірка, чи це хід бота
+        if ($this->isInvalidCell($row, $col)) return;
+
+        if ($this->selectedCell) {
+            $this->handleMoveAttempt($row, $col);
+        } else {
+            $this->selectPiece($row, $col);
+        }
+
+        if ($this->shouldBotMove()) { // Після ходу гравця перевіряємо, чи хід бота
+            $this->makeBotMove();
+        }
+    }
+
+    private function isBotTurn(): bool
+    {
+        if ($this->gameMode === 'player_vs_bot' && $this->currentPlayer === 'black') {
+            $this->showMessage('Зараз хід бота. Будь ласка, зачекайте.', 'info');
+            return true;
+        }
+        return false;
+    }
+
+    private function shouldBotMove(): bool
+    {
+        return $this->gameMode === 'player_vs_bot' && !$this->gameOver && $this->currentPlayer === 'black';
+    }
+
+    private function makeBotMove(): void
+    {
+        if ($this->bot === null || $this->gameOver || $this->currentPlayer !== 'black') {
+            return;
+        }
+
+        $this->showMessage('Бот робить хід...', 'info');
+
+        // Для імітації "думок" бота та уникнення блокування сесії
+        session_write_close();
+        usleep(800000); // 0.8 секунди
+        session_start();
+
+        $botMove = $this->bot->makeMove($this->board, 'black');
+
+        if (empty($botMove)) {
+            $this->endGameAsStalemate();
+            return;
+        }
+
+        [$fromRow, $fromCol, $toRow, $toCol] = [
+            $botMove['fromRow'],
+            $botMove['fromCol'],
+            $botMove['toRow'],
+            $botMove['toCol']
+        ];
+
+        $piece = $this->board->getPiece($fromRow, $fromCol);
+        if (!$this->isValidBotPiece($piece)) {
+            $this->showMessage('Помилка бота: невірна фігура для ходу.', 'error');
+            $this->switchPlayer(); // Перемикаємо гравця, щоб гра не зависла
+            return;
+        }
+
+        $captureInfo = $this->findCaptureOption($piece->getPossibleCaptures($fromRow, $fromCol, $this->board), $toRow, $toCol);
+
+        if ($captureInfo) {
+            $this->processBotCapture($fromRow, $fromCol, $toRow, $toCol, $captureInfo['captured']);
+            return;
+        }
+
+        $this->board->movePiece($fromRow, $fromCol, $toRow, $toCol);
+        $this->showMessage("Бот зробив хід на {$toRow},{$toCol}.", 'info');
+        $this->switchPlayer();
+        $this->checkGameEnd();
+    }
+
+    private function isValidBotPiece(?PieceInterface $piece): bool
+    {
+        return $piece !== null && $piece->getColor() === 'black';
+    }
+
+    private function processBotCapture(int $fromRow, int $fromCol, int $toRow, int $toCol, array $capturedPieces): void
+    {
+        foreach ($capturedPieces as $captured) {
+            $this->board->removePiece($captured['row'], $captured['col']);
+        }
+
+        $this->board->movePiece($fromRow, $fromCol, $toRow, $toCol);
+        $this->showMessage("Бот взяв фігуру на {$toRow},{$toCol}!", 'success');
+
+        if ($this->botCanContinueCapture($toRow, $toCol)) {
+            $this->showMessage('Бот продовжує бити!', 'info');
+            $this->makeBotMove(); // Бот продовжує бити
+            return;
+        }
+
+        $this->switchPlayer();
+        $this->checkGameEnd();
+    }
+
+    private function botCanContinueCapture(int $row, int $col): bool
+    {
+        $movedPiece = $this->board->getPiece($row, $col);
+        return $movedPiece && $movedPiece->canCapture($row, $col, $this->board);
+    }
+
+    private function endGameAsStalemate(): void
+    {
+        $this->showMessage('Бот не може зробити хід. Пат!', 'info');
+        $this->gameOver = true;
+        $this->gameStatus = 'Пат';
+    }
+
+    // ... інші гетери ...
 }
