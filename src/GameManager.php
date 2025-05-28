@@ -108,8 +108,13 @@ class GameManager
     {
         $piece = $this->board->getPiece($row, $col);
         if ($piece && $piece->getColor() === $this->currentPlayer) {
+            $hasPlayerCaptures = $this->playerHasCaptures($this->currentPlayer);
+            $pieceCanCapture = $piece->canCapture($row, $col, $this->board);
 
-
+            if ($hasPlayerCaptures && !$pieceCanCapture) {
+                $this->showMessage('Ви повинні бити, якщо це можливо! Виберіть фігуру, яка може бити.', 'error');
+                return;
+            }
             $this->selectedCell = ['row' => $row, 'col' => $col];
             $this->showMessage('Фігуру вибрано. Зробіть хід.', 'info');
         } else {
@@ -129,22 +134,28 @@ class GameManager
     }
 
 
-    private function attemptMove(int $fromRow, int $fromCol, int $toRow, int $toCol): void
+  private function attemptMove(int $fromRow, int $fromCol, int $toRow, int $toCol): void
     {
-        $this->showMessage('Спроба ходу: ' . $fromRow . ',' . $fromCol . ' до ' . $toRow . ',' . $toCol, 'info');
         $piece = $this->board->getPiece($fromRow, $fromCol);
+        if (!$piece) return;
 
-        if (!$piece) {
-            $this->showMessage('На вибраній клітинці немає фігури.', 'error');
+        $captureInfo = $this->getCaptureInfo($piece, $fromRow, $fromCol, $toRow, $toCol);
+        $hasMandatoryCapture = $this->playerHasCaptures($this->currentPlayer);
+
+        if ($this->isInvalidDueToMandatoryCapture($hasMandatoryCapture, $captureInfo)) return;
+
+        if ($captureInfo) {
+            $this->processCapture($fromRow, $fromCol, $toRow, $toCol, $captureInfo['captured']);
             return;
         }
-        if ($piece->isValidMove($fromRow, $fromCol, $toRow, $toCol, $this->board)) {
-            $this->board->movePiece($fromRow, $fromCol, $toRow, $toCol);
-            $this->showMessage('Хід зроблено.', 'info');
-            $this->switchPlayer();
-        } else {
-            $this->showMessage('Недійсний хід.', 'error');
+
+        if ($this->canPerformRegularMove($piece, $fromRow, $fromCol, $toRow, $toCol, $hasMandatoryCapture)) {
+            $this->processRegularMove($fromRow, $fromCol, $toRow, $toCol);
+            return;
         }
+
+        $this->showMessage('Недійсний хід або ви повинні бити.', 'error');
+        $this->checkGameEnd();
     }
 
     private function switchPlayer(): void
@@ -181,10 +192,73 @@ class GameManager
     {
         return true;
     } 
-    public function playerHasCaptures(string $color): bool
+   public function playerHasCaptures(string $color): bool
     {
+        for ($r = 0; $r < 8; $r++) {
+            for ($c = 0; $c < 8; $c++) {
+                $piece = $this->board->getPiece($r, $c);
+                if ($piece && $piece->getColor() === $color && $piece->canCapture($r, $c, $this->board)) {
+                    return true;
+                }
+            }
+        }
         return false;
-    } 
+    }
+     private function isInvalidDueToMandatoryCapture(bool $hasMandatoryCapture, ?array $captureInfo): bool
+    {
+        if ($hasMandatoryCapture && !$captureInfo) {
+            $this->showMessage('Ви повинні бити, якщо це можливо!', 'error');
+            return true;
+        }
+        return false;
+    }
+     private function getCaptureInfo(PieceInterface $piece, int $fromRow, int $fromCol, int $toRow, int $toCol): ?array
+    {
+        $possibleCaptures = $piece->getPossibleCaptures($fromRow, $fromCol, $this->board);
+        return $this->findCaptureOption($possibleCaptures, $toRow, $toCol);
+    }
+     private function findCaptureOption(array $possibleCaptures, int $toRow, int $toCol): ?array
+    {
+        foreach ($possibleCaptures as $option) {
+            if ($option['row'] === $toRow && $option['col'] === $toCol) {
+                return $option;
+            }
+        }
+        return null;
+    }
+    private function canPerformRegularMove(PieceInterface $piece, int $fromRow, int $fromCol, int $toRow, int $toCol, bool $hasMandatoryCapture): bool
+    {
+        return !$hasMandatoryCapture && $piece->isValidMove($fromRow, $fromCol, $toRow, $toCol, $this->board);
+    }
+
+
+    private function processCapture(int $fromRow, int $fromCol, int $toRow, int $toCol, array $capturedPieces): void
+    {
+        foreach ($capturedPieces as $captured) {
+            $this->board->removePiece($captured['row'], $captured['col']);
+        }
+
+        $this->board->movePiece($fromRow, $fromCol, $toRow, $toCol);
+        $this->showMessage('Взято!', 'success');
+
+        $movedPiece = $this->board->getPiece($toRow, $toCol);
+        if ($movedPiece && $movedPiece->canCapture($toRow, $toCol, $this->board)) {
+            $this->selectedCell = ['row' => $toRow, 'col' => $toCol];
+            $this->showMessage('Ви повинні продовжити бити!', 'info');
+            return; 
+        }
+
+        $this->switchPlayer();
+        $this->checkGameEnd(); 
+    }
+
+    private function processRegularMove(int $fromRow, int $fromCol, int $toRow, int $toCol): void
+    {
+        $this->board->movePiece($fromRow, $fromCol, $toRow, $toCol);
+        $this->showMessage('Хід зроблено.', 'info');
+        $this->switchPlayer();
+        $this->checkGameEnd(); 
+    }
     public function getBoardData(): array
     {
         return $this->board->getBoardState();

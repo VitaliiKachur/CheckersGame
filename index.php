@@ -37,8 +37,13 @@ function getFilteredPossibleMoves(?array $selectedCell, array $boardData, GameMa
 
     $possibleMoves = $selectedPiece->getPossibleMoves($selectedCell['row'], $selectedCell['col'], $gameManager->getBoard());
 
+    $playerHasCaptures = $gameManager->playerHasCaptures($gameManager->getCurrentPlayer());
 
-    return $possibleMoves; 
+    if ($playerHasCaptures) {
+        return array_filter($possibleMoves, fn($move) => ($move['isCapture'] ?? false)); 
+    }
+
+    return $possibleMoves;
 }
 
 function renderBoard(array $boardData, ?array $selectedCell, GameManager $gameManager): string
