@@ -4,68 +4,74 @@ require_once 'src/Interfaces/BoardInterface.php';
 
 class SimpleBot implements BotInterface
 {
-    public function makeMove(BoardInterface $board, string $color): ?array
+    public function makeMove(BoardInterface $board, string $botColor): array
     {
-        $allPossibleCaptures = $this->findAllCaptures($board, $color);
-
-        if (!empty($allPossibleCaptures)) {
-            return $this->selectRandomMove($allPossibleCaptures);
+        $captures = $this->findAllCaptures($board, $botColor);
+        if (!empty($captures)) {
+            return $this->selectRandomMove($captures);
         }
 
-        $allRegularMoves = $this->findAllRegularMoves($board, $color);
-
-        if (!empty($allRegularMoves)) {
-            return $this->selectRandomMove($allRegularMoves);
+        $moves = $this->findAllRegularMoves($board, $botColor);
+        if (!empty($moves)) {
+            return $this->selectRandomMove($moves);
         }
 
-        return null; 
+        return []; 
     }
-
     private function findAllCaptures(BoardInterface $board, string $color): array
     {
         $captures = [];
-        $piecesPositions = $this->getPiecesPositionsByColor($board, $color);
 
-        foreach ($piecesPositions as $position) {
-            $piece = $board->getPiece($position['row'], $position['col']);
-            if ($piece && $piece->canCapture($position['row'], $position['col'], $board)) {
-                $possibleCaptures = $piece->getPossibleCaptures($position['row'], $position['col'], $board);
-                foreach ($possibleCaptures as $capture) {
-                    $captures[] = [
-                        'fromRow' => $position['row'],
-                        'fromCol' => $position['col'],
-                        'toRow' => $capture['row'],
-                        'toCol' => $capture['col'],
-                        'isCapture' => true,
-                        'captured' => $capture['captured'] 
-                    ];
+        for ($r = 0; $r < 8; $r++) {
+            for ($c = 0; $c < 8; $c++) {
+                if ($this->isOwnPieceAt($board, $r, $c, $color)) {
+                    $capturesFromCell = $this->getCapturesFromCell($board, $r, $c);
+                    $captures = array_merge($captures, $capturesFromCell);
                 }
             }
         }
+
         return $captures;
     }
+
+    private function isOwnPieceAt(BoardInterface $board, int $row, int $col, string $color): bool
+    {
+        $piece = $board->getPiece($row, $col);
+        return $piece !== null && $piece->getColor() === $color;
+    }
+
+    private function getCapturesFromCell(BoardInterface $board, int $row, int $col): array
+    {
+        $piece = $board->getPiece($row, $col);
+        $captures = [];
+
+        foreach ($piece->getPossibleCaptures($row, $col, $board) as $capture) {
+            $captures[] = [
+                'fromRow' => $row,
+                'fromCol' => $col,
+                'toRow' => $capture['toRow'],
+                'toCol' => $capture['toCol'],
+                'captured' => $capture['captured'],
+            ];
+        }
+
+        return $captures;
+    }
+
 
     private function findAllRegularMoves(BoardInterface $board, string $color): array
     {
         $moves = [];
+
         $piecesPositions = $this->getPiecesPositionsByColor($board, $color);
 
         foreach ($piecesPositions as $position) {
-            $piece = $board->getPiece($position['row'], $position['col']);
-            if ($piece) {
-                $possibleMoves = $piece->getPossibleMoves($position['row'], $position['col'], $board);
-                foreach ($possibleMoves as $move) {
-                    if (!($move['isCapture'] ?? false)) { 
-                        $moves[] = [
-                            'fromRow' => $position['row'],
-                            'fromCol' => $position['col'],
-                            'toRow' => $move['row'],
-                            'toCol' => $move['col']
-                        ];
-                    }
-                }
+            $possibleMoves = $this->getPossibleNonCaptureMovesForPiece($board, $position['row'], $position['col']);
+            foreach ($possibleMoves as $move) {
+                $moves[] = $move;
             }
         }
+
         return $moves;
     }
 
@@ -83,11 +89,31 @@ class SimpleBot implements BotInterface
         return $positions;
     }
 
+    private function getPossibleNonCaptureMovesForPiece(BoardInterface $board, int $row, int $col): array
+    {
+        $moves = [];
+        $piece = $board->getPiece($row, $col);
+        if (!$piece) {
+            return $moves;
+        }
+
+        foreach ($piece->getPossibleMoves($row, $col, $board) as $move) {
+            if (!($move['isCapture'] ?? false)) {
+                $moves[] = [
+                    'fromRow' => $row,
+                    'fromCol' => $col,
+                    'toRow' => $move['row'],
+                    'toCol' => $move['col']
+                ];
+            }
+        }
+
+        return $moves;
+    }
+
+
     private function selectRandomMove(array $moves): array
     {
-        if (empty($moves)) {
-            return [];
-        }
         return $moves[array_rand($moves)];
     }
 }

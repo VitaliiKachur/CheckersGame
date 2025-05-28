@@ -3,50 +3,10 @@ session_start();
 
 require_once 'src/Board.php';
 require_once 'src/GameManager.php';
-require_once 'src/Bots/BotFactory.php'; 
-require_once 'src/Interfaces/BotInterface.php'; 
+require_once 'src/Bots/BotFactory.php';
+require_once 'src/Interfaces/BotInterface.php';
 require_once 'src/Board.php';
 
-
-function renderCell(int $row, int $col, string $cellClass, string $selectedClass, string $possibleMoveClass, string $boxShadowStyle, $piece = null): string
-{
-    $html = "<form action='index.php' method='post' style='display:inline;'>";
-    $html .= "<input type='hidden' name='action' value='move'>"; 
-    $html .= "<input type='hidden' name='row' value='{$row}'>";
-    $html .= "<input type='hidden' name='col' value='{$col}'>";
-    $html .= "<button type='submit' class='cell {$cellClass} {$selectedClass} {$possibleMoveClass}' data-row='{$row}' data-col='{$col}' style='box-shadow: {$boxShadowStyle};'>";
-
-    if ($piece instanceof PieceInterface) { 
-        $kingClass = $piece->isKing() ? ' king' : '';
-        $html .= "<div class='piece {$piece->getColor()}{$kingClass}'></div>";
-    }
-
-    $html .= "</button></form>";
-
-    return $html;
-}
-function getFilteredPossibleMoves(?array $selectedCell, array $boardData, GameManager $gameManager): array
-{
-    if (!$selectedCell) {
-        return [];
-    }
-
-    $selectedPiece = $boardData[$selectedCell['row']][$selectedCell['col']] ?? null;
-
-    if (!$selectedPiece || !($selectedPiece instanceof PieceInterface) || $selectedPiece->getColor() !== $gameManager->getCurrentPlayer()) {
-        return [];
-    }
-
-    $possibleMoves = $selectedPiece->getPossibleMoves($selectedCell['row'], $selectedCell['col'], $gameManager->getBoard());
-
-    $playerHasCaptures = $gameManager->playerHasCaptures($gameManager->getCurrentPlayer());
-
-    if ($playerHasCaptures) {
-        return array_filter($possibleMoves, fn($move) => ($move['isCapture'] ?? false)); 
-    }
-
-    return $possibleMoves;
-}
 
 function renderBoard(array $boardData, ?array $selectedCell, GameManager $gameManager): string
 {
@@ -56,16 +16,15 @@ function renderBoard(array $boardData, ?array $selectedCell, GameManager $gameMa
 
     for ($row = 0; $row < 8; $row++) {
         for ($col = 0; $col < 8; $col++) {
-           
             [$possibleMoveClass, $boxShadowStyle] = getCellMoveStyles($row, $col, $filteredPossibleMoves);
 
-
+            $cellClass = getCellClass($row, $col);
             $selectedClass = isSelectedCell($selectedCell, $row, $col) ? 'selected' : '';
 
             $html .= renderCell(
                 $row,
                 $col,
-              //   $cellClass,
+                $cellClass,
                 $selectedClass,
                 $possibleMoveClass,
                 $boxShadowStyle,
@@ -73,7 +32,9 @@ function renderBoard(array $boardData, ?array $selectedCell, GameManager $gameMa
             );
         }
     }
+
     $html .= '</div>';
+
     return $html;
 }
 
@@ -86,12 +47,18 @@ function getCellMoveStyles(int $row, int $col, array $filteredPossibleMoves): ar
         if ($move['row'] === $row && $move['col'] === $col) {
             $possibleMoveClass = 'possible-move';
             if (!empty($move['isCapture'])) {
-                $boxShadowStyle = 'inset 0 0 20px rgba(255, 0, 0, 0.7)'; 
+                $boxShadowStyle = 'inset 0 0 20px rgba(255, 0, 0, 0.7)';
             }
             break;
         }
     }
+
     return [$possibleMoveClass, $boxShadowStyle];
+}
+
+function getCellClass(int $row, int $col): string
+{
+    return (($row + $col) % 2 === 0) ? 'light' : 'dark';
 }
 
 function isSelectedCell(?array $selectedCell, int $row, int $col): bool
@@ -99,29 +66,63 @@ function isSelectedCell(?array $selectedCell, int $row, int $col): bool
     return $selectedCell !== null && $selectedCell['row'] === $row && $selectedCell['col'] === $col;
 }
 
+function getFilteredPossibleMoves(?array $selectedCell, array $boardData, GameManager $gameManager): array
+{
+    if (!$selectedCell) {
+        return [];
+    }
+
+    $selectedPiece = $boardData[$selectedCell['row']][$selectedCell['col']] ?? null;
+
+    if (!$selectedPiece || $selectedPiece->getColor() !== $gameManager->getCurrentPlayer()) {
+        return [];
+    }
+
+    $possibleMoves = $selectedPiece->getPossibleMoves($selectedCell['row'], $selectedCell['col'], $gameManager->getBoard());
+
+    $playerHasCaptures = $gameManager->playerHasCaptures($gameManager->getCurrentPlayer());
+
+    if ($playerHasCaptures) {
+        return array_filter($possibleMoves, fn($move) => $move['isCapture']);
+    }
+
+    return $possibleMoves;
+}
+
+function renderCell(int $row, int $col, string $cellClass, string $selectedClass, string $possibleMoveClass, string $boxShadowStyle, $piece = null): string
+{
+    $html = "<form action='index.php' method='post' style='display:inline;'>";
+    $html .= "<input type='hidden' name='action' value='move'>";
+    $html .= "<input type='hidden' name='row' value='{$row}'>";
+    $html .= "<input type='hidden' name='col' value='{$col}'>";
+    $html .= "<button type='submit' class='cell {$cellClass} {$selectedClass} {$possibleMoveClass}' data-row='{$row}' data-col='{$col}' style='box-shadow: {$boxShadowStyle};'>";
+
+    if ($piece) {
+        $kingClass = $piece->isKing() ? ' king' : '';
+        $html .= "<div class='piece {$piece->getColor()}{$kingClass}'></div>";
+    }
+
+    $html .= "</button></form>";
+
+    return $html;
+}
+
 
 if (isset($_SESSION['game_state'])) {
     $gameManager = unserialize($_SESSION['game_state']);
-    if ($gameManager === false || !($gameManager instanceof GameManager)) {
-        error_log("Failed to unserialize game state. Re-initializing.");
-        session_unset();
-        session_destroy();
-        $gameManager = GameManager::getInstance();
+    if ($gameManager->getMessage() === 'Ви повинні продовжити бити!' && $gameManager->getSelectedCell() !== null) {
     } else {
-        if ($gameManager->getMessage() === 'Ви повинні продовжити бити!' && $gameManager->getSelectedCell() !== null) {
-            // Keep the message
-        } else {
-            $gameManager->showMessage(''); 
-        }
+        $gameManager->showMessage(''); 
     }
 } else {
     $gameManager = GameManager::getInstance();
 }
 
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['action'])) {
         if ($_POST['action'] === 'reset') {
-            $gameMode = $_POST['game_mode'] ?? 'player_vs_player'; // Отримуємо режим з форми
+            $gameMode = $_POST['game_mode'] ?? 'player_vs_player';
             $gameManager->resetGame($gameMode);
         } elseif ($_POST['action'] === 'move') {
             $row = isset($_POST['row']) ? (int) $_POST['row'] : null;
@@ -131,14 +132,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-
-if ($gameManager->getGameMode() === 'player_vs_bot' && $gameManager->getCurrentPlayer() === 'black' && $gameManager->getGameStatus() !== 'Пат' && $gameManager->getGameStatus() !== 'Чорні перемогли') {
+if ($gameManager->getGameMode() === 'player_vs_bot' && $gameManager->getCurrentPlayer() === 'black' && !$gameManager->getGameStatus() === 'Пат' && !$gameManager->getGameStatus() === 'Чорні перемогли') {
     $gameManager->makeBotMove();
 }
 
-
 $_SESSION['game_state'] = serialize($gameManager);
-
 
 $boardData = $gameManager->getBoardData();
 $currentPlayer = $gameManager->getCurrentPlayer();
@@ -155,7 +153,7 @@ $gameMode = $gameManager->getGameMode();
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Шашки (PHP) - Дошка</title>
+    <title>Шашки (PHP)</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -187,6 +185,20 @@ $gameMode = $gameManager->getGameMode();
             font-size: 2.2em;
         }
 
+        .game-info {
+            margin-bottom: 20px;
+            font-size: 1.1em;
+            color: #555;
+            display: flex;
+            justify-content: space-around;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .game-info strong {
+            color: #000;
+        }
+
         .board {
             display: grid;
             grid-template-columns: repeat(8, 60px);
@@ -199,6 +211,8 @@ $gameMode = $gameManager->getGameMode();
             box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
         }
 
+
+
         .cell {
             width: 60px;
             height: 60px;
@@ -207,7 +221,7 @@ $gameMode = $gameManager->getGameMode();
             display: flex;
             align-items: center;
             justify-content: center;
-            cursor: default;
+            cursor: pointer;
             background-color: #eee;
             transition: background-color 0.2s ease, box-shadow 0.2s ease;
             position: relative;
@@ -215,6 +229,26 @@ $gameMode = $gameManager->getGameMode();
 
         .cell.dark {
             background-color: #8B4513;
+        }
+
+        .cell:hover:not(.selected):not(.possible-move) {
+            background-color: #ccc;
+        }
+
+        .cell.dark:hover:not(.selected):not(.possible-move) {
+            background-color: #6a340f;
+        }
+
+        .cell.selected {
+            background-color: #FFD700;
+            border: 2px solid #DAA520;
+            box-sizing: border-box;
+        }
+
+        .cell.possible-move {
+            background-color: #7FFF00;
+            border: 2px solid #6B8E23;
+            box-sizing: border-box;
         }
 
         .piece {
@@ -232,11 +266,12 @@ $gameMode = $gameManager->getGameMode();
         }
 
         .piece.white {
-            background-image: url('assets/Figure1_.png');
+            background-image: url('assets/Figure1_.png'); 
         }
 
         .piece.black {
             background-image: url('assets/Figure_2_.png');
+
         }
 
         .piece.king::after {
@@ -244,20 +279,6 @@ $gameMode = $gameManager->getGameMode();
             font-size: 2.3em;
             position: absolute;
             margin-bottom: 10px;
-        }
-
-        .game-info {
-            margin-bottom: 20px;
-            font-size: 1.1em;
-            color: #555;
-            display: flex;
-            justify-content: space-around;
-            flex-wrap: wrap;
-            gap: 10px;
-        }
-
-        .game-info strong {
-            color: #000;
         }
 
         .controls {
@@ -306,29 +327,50 @@ $gameMode = $gameManager->getGameMode();
             border: 1px solid #cce5ff;
         }
 
-        .cell.selected {
-            background-color: #FFD700;
-            border: 2px solid #DAA520;
-            box-sizing: border-box;
+        .message.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
         }
 
-        .cell.possible-move {
-            background-color: #7FFF00;
-            border: 2px solid #6B8E23;
-            box-sizing: border-box;
+        .message.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
         }
-         .message.error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
-        .game-mode-selection { margin-bottom: 20px; }
-        .game-mode-selection label { margin-right: 10px; font-weight: bold; }
+
+        .game-mode-selection {
+            margin-bottom: 20px;
+        }
+
+        .game-mode-selection label {
+            margin-right: 10px;
+            font-weight: bold;
+        }
+
         .game-mode-selection select,
-        .game-mode-selection button { padding: 8px 12px; border-radius: 5px; border: 1px solid #ccc; font-size: 1em; cursor: pointer; }
-        .game-mode-selection button { background-color: #007bff; color: white; border-color: #007bff; margin-left: 10px; }
-        .game-mode-selection button:hover { background-color: #0056b3; }
+        .game-mode-selection button {
+            padding: 8px 12px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+            font-size: 1em;
+            cursor: pointer;
+        }
+
+        .game-mode-selection button {
+            background-color: #007bff;
+            color: white;
+            border-color: #007bff;
+            margin-left: 10px;
+        }
+
+        .game-mode-selection button:hover {
+            background-color: #0056b3;
+        }
     </style>
 </head>
 
 <body>
-    <body>
     <div class="game-container">
         <h1>🏁 Шашки 🏁</h1>
 
@@ -356,8 +398,8 @@ $gameMode = $gameManager->getGameMode();
         <div class="controls">
             <form action="index.php" method="post">
                 <input type="hidden" name="action" value="reset">
-                <input type="hidden" name="game_mode" value="<?php echo htmlspecialchars($gameMode); ?>">
-                <button type="submit" class="btn">🔄 Перезапустити поточну гру</button>
+                <input type="hidden" name="game_mode" value="<?php echo htmlspecialchars($gameMode); ?>"> <button
+                    type="submit" class="btn">🔄 Перезапустити поточну гру</button>
             </form>
         </div>
 
@@ -367,24 +409,30 @@ $gameMode = $gameManager->getGameMode();
             </div>
         <?php endif; ?>
     </div>
-            <script>
-                document.addEventListener('DOMContentLoaded', () => {
-                    const board = document.getElementById('board');
-                    const initialSelectedRow = <?php echo json_encode($selectedCell['row'] ?? null); ?>;
-                    const initialSelectedCol = <?php echo json_encode($selectedCell['col'] ?? null); ?>;
 
-                    function markSelectedCell(row, col) {
-                        if (row === null || col === null) return;
-                        const cell = board.querySelector(`[data-row="<span class="math-inline">\{row\}"\]\[data\-col\="</span>{col}"]`);
-                        if (cell) {
-                            cell.classList.add('selected');
-                        }
-                    }
-                    markSelectedCell(initialSelectedRow, initialSelectedCol);
-                });
-            </script>
-        </div>
-    </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const board = document.getElementById('board');
+            const initialSelectedRow = <?php echo json_encode($selectedCell['row'] ?? null); ?>;
+            const initialSelectedCol = <?php echo json_encode($selectedCell['col'] ?? null); ?>;
+
+            function markSelectedCell(row, col) {
+                if (row === null || col === null) return;
+                const cell = board.querySelector(`[data-row="${row}"][data-col="${col}"]`);
+                if (cell) {
+                    cell.classList.add('selected');
+                }
+            }
+
+            markSelectedCell(initialSelectedRow, initialSelectedCol);
+
+            board.addEventListener('click', (event) => {
+                const clickedButton = event.target.closest('.cell');
+                if (!clickedButton) return;
+            });
+        });
+    </script>
+
 </body>
 
 </html>
