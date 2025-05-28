@@ -1,48 +1,45 @@
 <?php
 session_start();
 
-require_once 'src/Board.php'; 
+require_once 'src/Board.php';
+require_once 'src/GameManager.php';
 
 function getCellClass(int $row, int $col): string
-{
-    return (($row + $col) % 2 === 0) ? 'light' : 'dark';
+{ /* ... */
 }
-
 function renderCell(int $row, int $col, string $cellClass, string $selectedClass, string $possibleMoveClass, string $boxShadowStyle, $piece = null): string
-{
-    $html = "<div class='cell {$cellClass} {$selectedClass} {$possibleMoveClass}' data-row='{$row}' data-col='{$col}' style='box-shadow: {$boxShadowStyle};'>";
-    if ($piece) {
-        $kingClass = ($piece['isKing'] ?? false) ? ' king' : '';
-        $html .= "<div class='piece {$piece['color']}{$kingClass}'></div>";
-    }
-    $html .= "</div>";
-    return $html;
+{ /* ... */
 }
-
 function renderBoard(array $boardData): string
-{
-    $html = '<div class="board" id="board">';
-    for ($row = 0; $row < 8; $row++) {
-        for ($col = 0; $col < 8; $col++) {
-            $cellClass = getCellClass($row, $col);
-            $html .= renderCell(
-                $row,
-                $col,
-                $cellClass,
-                '',
-                '', 
-                '', 
-                $boardData[$row][$col] ?? null
-            );
-        }
-    }
-    $html .= '</div>';
-    return $html;
+{ /* ... */
 }
 
-$board = new Board(); 
 
-$boardData = $board->getBoardState();
+if (isset($_SESSION['game_state'])) {
+    $gameManager = unserialize($_SESSION['game_state']);
+    if ($gameManager->getMessage() === 'Ви повинні продовжити бити!' && $gameManager->getSelectedCell() !== null) {
+
+    } else {
+        $gameManager->showMessage('');
+    }
+} else {
+    $gameManager = GameManager::getInstance();
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (isset($_POST['action']) && $_POST['action'] === 'reset') {
+        $gameManager->resetGame('player_vs_player');
+    }
+}
+
+$_SESSION['game_state'] = serialize($gameManager);
+
+$boardData = $gameManager->getBoardData();
+$currentPlayer = $gameManager->getCurrentPlayer();
+$gameStatus = $gameManager->getGameStatus();
+$message = $gameManager->getMessage();
+$messageType = $gameManager->getMessageType();
+$gameMode = $gameManager->getGameMode();
 
 ?>
 <!DOCTYPE html>
@@ -141,14 +138,90 @@ $boardData = $board->getBoardState();
             position: absolute;
             margin-bottom: 10px;
         }
+
+        .game-info {
+            margin-bottom: 20px;
+            font-size: 1.1em;
+            color: #555;
+            display: flex;
+            justify-content: space-around;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .game-info strong {
+            color: #000;
+        }
+
+        .controls {
+            margin-top: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .btn {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1em;
+            transition: background-color 0.3s ease, transform 0.2s ease;
+        }
+
+        .btn:hover {
+            background-color: #45a049;
+            transform: translateY(-2px);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .message {
+            margin-left: 60px;
+            margin-top: 20px;
+            padding: 10px 15px;
+            border-radius: 5px;
+            font-weight: bold;
+            text-align: center;
+            width: 100%;
+            max-width: 400px;
+            box-sizing: border-box;
+        }
+
+        .message.info {
+            background-color: #e7f3fe;
+            color: #0366d6;
+            border: 1px solid #cce5ff;
+        }
     </style>
 </head>
-
 <body>
     <div class="game-container">
         <h1>🏁 Шашки 🏁</h1>
+        <div class="game-info">
+            <div>Поточний гравець: <strong><?php echo ucfirst($currentPlayer); ?></strong></div>
+            <div>Статус: <span><?php echo $gameStatus; ?></span></div>
+        </div>
+
         <?php echo renderBoard($boardData); ?>
+
+        <div class="controls">
+            <form action="index.php" method="post">
+                <input type="hidden" name="action" value="reset">
+                <button type="submit" class="btn">🔄 Перезапустити гру</button>
+            </form>
+        </div>
+
+        <?php if (!empty($message)): ?>
+            <div class="message <?php echo $messageType; ?>">
+                <?php echo $message; ?>
+            </div>
+        <?php endif; ?>
     </div>
 </body>
-
 </html>
