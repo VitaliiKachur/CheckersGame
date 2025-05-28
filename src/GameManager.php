@@ -31,7 +31,7 @@ class GameManager implements MessageObserver
     private function __construct()
     {
         $this->initializeServices();
-        $this->initializeNewGame('player_vs_player');
+        $this->initializeNewGame('player_vs_player', 'white');
     }
 
     private function initializeServices(): void
@@ -50,18 +50,26 @@ class GameManager implements MessageObserver
         // Handle message if needed for logging or other purposes
     }
 
-    private function initializeNewGame(string $gameMode): void
+    private function initializeNewGame(string $gameMode, string $humanPlayerColor = 'white'): void
     {
         $this->board = new Board();
-        $this->gameState = new GameState($gameMode);
+        $this->gameState = new GameState($gameMode, $humanPlayerColor);
 
-        // Reinitialize services with new board
         $this->playerActionHandler = new PlayerActionHandler($this->board, $this->messageService, $this->moveValidator);
         $this->gameEndDetector = new GameEndDetector($this->board, $this->messageService);
         $this->botService = new BotService($this->board, $this->messageService);
 
-        $this->botService->initializeBot($gameMode);
-        $this->messageService->showMessage('Нова гра розпочата. ' . ($gameMode === 'player_vs_bot' ? 'Ви граєте проти бота.' : 'Гравець проти гравця.'), 'info');
+        if ($gameMode === 'player_vs_bot') {
+            $this->botService->initializeBot($gameMode);
+            $colorText = $humanPlayerColor === 'white' ? 'білими' : 'чорними';
+            $this->messageService->showMessage("Нова гра розпочата. Ви граєте {$colorText} проти бота.", 'info');
+
+            if ($this->gameState->isBotTurn()) {
+                $this->botService->makeBotMove($this->gameState, $this->gameEndDetector);
+            }
+        } else {
+            $this->messageService->showMessage('Нова гра розпочата. Гравець проти гравця.', 'info');
+        }
     }
 
     public static function getInstance(): GameManager
@@ -84,9 +92,9 @@ class GameManager implements MessageObserver
         }
     }
 
-    public function resetGame(string $gameMode = 'player_vs_player'): void
+    public function resetGame(string $gameMode = 'player_vs_player', string $humanPlayerColor = 'white'): void
     {
-        $this->initializeNewGame($gameMode);
+        $this->initializeNewGame($gameMode, $humanPlayerColor);
     }
 
     public function handleAction(?int $row, ?int $col): void
@@ -122,7 +130,7 @@ class GameManager implements MessageObserver
     private function isBotTurn(): bool
     {
         return $this->gameState->getGameMode() === 'player_vs_bot' &&
-            $this->gameState->getCurrentPlayer() === 'black';
+            !$this->gameState->isHumanTurn();
     }
 
     private function areValidCoordinates(?int $row, ?int $col): bool
@@ -177,7 +185,12 @@ class GameManager implements MessageObserver
     private function isClickOnOwnPiece(int $row, int $col): bool
     {
         $clickedPiece = $this->board->getPiece($row, $col);
-        return $clickedPiece && $clickedPiece->getColor() === $this->gameState->getCurrentPlayer();
+
+        if ($this->gameState->getGameMode() === 'player_vs_player') {
+            return $clickedPiece && $clickedPiece->getColor() === $this->gameState->getCurrentPlayer();
+        }
+
+        return $clickedPiece && $clickedPiece->getColor() === $this->gameState->getHumanPlayerColor();
     }
 
     private function handleOwnPieceClick(int $row, int $col, array $selectedCell): void
@@ -217,11 +230,13 @@ class GameManager implements MessageObserver
     {
         $this->clearSelection();
     }
+
     public function clearSelection(): void
     {
         $this->gameState->clearSelection();
         $this->messageService->showMessage('', 'info');
     }
+
     public function playerHasCaptures(string $color): bool
     {
         for ($r = 0; $r < 8; $r++) {
@@ -289,44 +304,67 @@ class GameManager implements MessageObserver
     {
         return $this->gameState->getGameMode() === 'player_vs_bot' &&
             !$this->gameState->isGameOver() &&
-            $this->gameState->getCurrentPlayer() === 'black';
+            $this->gameState->isBotTurn();
     }
 
     public function getBoardData(): array
     {
         return $this->board->getBoardState();
     }
+
     public function getBoard(): Board
     {
         return $this->board;
     }
+
     public function getCurrentPlayer(): string
     {
         return $this->gameState->getCurrentPlayer();
     }
+
     public function getSelectedCell(): ?array
     {
         return $this->gameState->getSelectedCell();
     }
+
     public function getGameStatus(): string
     {
         return $this->gameState->getGameStatus();
     }
+
     public function getMessage(): string
     {
         return $this->messageService->getMessage();
     }
+
     public function getMessageType(): string
     {
         return $this->messageService->getMessageType();
     }
+
     public function getGameMode(): string
     {
         return $this->gameState->getGameMode();
     }
+
+    public function getHumanPlayerColor(): string
+    {
+        return $this->gameState->getHumanPlayerColor();
+    }
+
     public function showMessage(string $text, string $type = 'info'): void
     {
         $this->messageService->showMessage($text, $type);
     }
+    public function getGameState(): GameState
+    {
+        return $this->gameState;
+    }
 
+    public function makeBotMove(): void
+    {
+        if ($this->shouldBotMove()) {
+            $this->botService->makeBotMove($this->gameState, $this->gameEndDetector);
+        }
+    }
 }
