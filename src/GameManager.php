@@ -163,35 +163,7 @@ class GameManager
         $this->currentPlayer = ($this->currentPlayer === 'white') ? 'black' : 'white';
         $this->showMessage($this->currentPlayer === 'white' ? 'Хід білих.' : 'Хід чорних.', 'info');
     }
-
-
-    private function checkGameEnd(): void
-    { /* ... */
-    }
-    private function isVictory(string $color): bool
-    {
-        return false;
-    }
-    private function isStalemate(string $player): bool
-    {
-        return false;
-    }
-    public function playerHasValidMoves(string $color): bool
-    {
-        return true;
-    } 
-    private function isPlayerPiece(?PieceInterface $piece, string $color): bool
-    {
-        return true;
-    }
-    private function canPieceCapture(PieceInterface $piece, int $row, int $col): bool
-    {
-        return false;
-    }
-    private function canPieceMove(PieceInterface $piece, int $row, int $col): bool
-    {
-        return true;
-    } 
+  
    public function playerHasCaptures(string $color): bool
     {
         for ($r = 0; $r < 8; $r++) {
@@ -291,5 +263,75 @@ class GameManager
     public function getGameMode(): string
     {
         return $this->gameMode;
+    }
+    private function checkGameEnd(): void
+    {
+        if ($this->isVictory('white'))
+            return;
+        if ($this->isVictory('black'))
+            return;
+        if ($this->isStalemate($this->currentPlayer))
+            return;
+    }
+
+    private function isVictory(string $color): bool
+    {
+        $remaining = $this->board->countPieces($color);
+        if ($remaining === 0) {
+            $this->gameOver = true;
+            $winner = $color === 'white' ? 'Чорні' : 'Білі';
+            $this->gameStatus = "$winner перемогли";
+            $this->showMessage("{$winner} перемогли!", 'success');
+            return true;
+        }
+        return false;
+    }
+
+    private function isStalemate(string $player): bool
+    {
+        if (!$this->playerHasValidMoves($player)) {
+            $this->gameOver = true;
+            $this->gameStatus = 'Пат';
+            $this->showMessage("Пат! Гра закінчилася нічиєю, у " . ($player === 'white' ? 'білих' : 'чорних') . " немає дійсних ходів.", 'info');
+            return true;
+        }
+        return false;
+    }
+
+    public function playerHasValidMoves(string $color): bool
+    {
+        $hasCaptures = $this->playerHasCaptures($color);
+
+        for ($r = 0; $r < 8; $r++) {
+            for ($c = 0; $c < 8; $c++) {
+                $piece = $this->board->getPiece($r, $c);
+
+                if ($this->isPlayerPiece($piece, $color)) {
+                    if ($hasCaptures && $this->canPieceCapture($piece, $r, $c)) {
+                        return true;
+                    }
+
+                    if (!$hasCaptures && $this->canPieceMove($piece, $r, $c)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    private function isPlayerPiece(?PieceInterface $piece, string $color): bool
+    {
+        return $piece !== null && $piece->getColor() === $color;
+    }
+
+    private function canPieceCapture(PieceInterface $piece, int $row, int $col): bool
+    {
+        return !empty($piece->getPossibleCaptures($row, $col, $this->board));
+    }
+
+    private function canPieceMove(PieceInterface $piece, int $row, int $col): bool
+    {
+        return !empty($piece->getPossibleMoves($row, $col, $this->board));
     }
 }
