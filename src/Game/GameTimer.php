@@ -42,15 +42,3 @@ class GameTimer
         return is_numeric($startTime) ? ($startTime * 1000) : 'null';
     }
 }
-
-class GameTimerManager
-{
-    private static ?GameTimer $timer = null;
-
-    public static function getTimer(): GameTimer
-    {
-        return self::$timer ??= new GameTimer();
-    }
-}
-
-?>

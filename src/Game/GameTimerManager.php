@@ -8,3 +8,5 @@ class GameTimerManager
         return self::$timer ??= new GameTimer();
     }
 }
+
+?>

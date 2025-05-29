@@ -1,6 +1,7 @@
 <?php
 require_once 'game.php';
 require_once 'src/Game/GameTimer.php';
+require_once 'src/Game/GameTimerManager.php';
 
 $timer = GameTimerManager::getTimer();
 $startTime = $_SESSION['game_start_time'] ?? null;
