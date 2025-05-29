@@ -64,7 +64,7 @@ class BotService
             $this->processBotCapture($fromRow, $fromCol, $toRow, $toCol, $captureInfo['captured'], $gameState, $gameEndDetector);
         } else {
             $this->board->movePiece($fromRow, $fromCol, $toRow, $toCol);
-            $this->messageService->showMessage("Бот зробив хід на {$toRow},{$toCol}.", 'info');
+            $this->messageService->showMessage("Бот зробив хід", 'info');
             $gameState->switchPlayer();
             $gameEndDetector->checkGameEnd($gameState);
         }
@@ -77,7 +77,7 @@ class BotService
         }
 
         $this->board->movePiece($fromRow, $fromCol, $toRow, $toCol);
-        $this->messageService->showMessage("Бот взяв фігуру на {$toRow},{$toCol}!", 'success');
+        $this->messageService->showMessage("Бот взяв фігуру!", 'success');
 
         if ($this->botCanContinueCapture($toRow, $toCol)) {
             $this->messageService->showMessage('Бот продовжує бити!', 'info');
