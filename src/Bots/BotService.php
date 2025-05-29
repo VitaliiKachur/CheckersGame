@@ -23,18 +23,15 @@ class BotService
 
     public function makeBotMove(GameState $gameState, GameEndDetector $gameEndDetector): void
     {
-        if ($this->bot === null || $gameState->isGameOver() || !$gameState->isBotTurn()) {
+        if ($this->shouldSkipBotMove($gameState)) {
             return;
         }
 
         $botColor = $gameState->getBotColor();
-        $this->messageService->showMessage('Бот робить хід...', 'info');
+        $this->showBotThinkingMessage();
+        $this->pauseForBotThinking();
 
-        session_write_close();
-        usleep(800000);
-        session_start();
-
-        $botMove = $this->bot->makeMove($this->board, $botColor);
+        $botMove = $this->getBotMove($botColor);
 
         if (empty($botMove)) {
             $this->endGameAsStalemate($gameState);
@@ -44,50 +41,149 @@ class BotService
         $this->executeBotMove($botMove, $gameState, $gameEndDetector, $botColor);
     }
 
+    private function shouldSkipBotMove(GameState $gameState): bool
+    {
+        return $this->bot === null || $gameState->isGameOver() || !$gameState->isBotTurn();
+    }
+
+    private function showBotThinkingMessage(): void
+    {
+        $this->messageService->showMessage('Бот робить хід...', 'info');
+    }
+
+    private function pauseForBotThinking(): void
+    {
+        session_write_close();
+        usleep(800000);
+        session_start();
+    }
+
+    private function getBotMove(string $botColor): array
+    {
+        return $this->bot->makeMove($this->board, $botColor);
+    }
+
     private function executeBotMove(array $botMove, GameState $gameState, GameEndDetector $gameEndDetector, string $botColor): void
     {
-        [$fromRow, $fromCol, $toRow, $toCol] = [
-            $botMove['fromRow'], $botMove['fromCol'], 
-            $botMove['toRow'], $botMove['toCol']
-        ];
+        $moveCoordinates = $this->extractMoveCoordinates($botMove);
 
-        $piece = $this->board->getPiece($fromRow, $fromCol);
-        if (!$this->isValidBotPiece($piece, $botColor)) {
-            $this->messageService->showMessage('Помилка бота: невірна фігура для ходу.', 'error');
-            $gameState->switchPlayer();
+        if (!$this->validateBotMove($moveCoordinates, $botColor)) {
+            $this->handleInvalidBotMove($gameState);
             return;
         }
 
-        $captureInfo = $this->findCaptureOption($piece->getPossibleCaptures($fromRow, $fromCol, $this->board), $toRow, $toCol);
+        $this->performBotMove($moveCoordinates, $gameState, $gameEndDetector);
+    }
+
+    private function extractMoveCoordinates(array $botMove): array
+    {
+        return [
+            'fromRow' => $botMove['fromRow'],
+            'fromCol' => $botMove['fromCol'],
+            'toRow' => $botMove['toRow'],
+            'toCol' => $botMove['toCol']
+        ];
+    }
+
+    private function validateBotMove(array $coordinates, string $botColor): bool
+    {
+        $piece = $this->board->getPiece($coordinates['fromRow'], $coordinates['fromCol']);
+        return $this->isValidBotPiece($piece, $botColor);
+    }
+
+    private function handleInvalidBotMove(GameState $gameState): void
+    {
+        $this->messageService->showMessage('Помилка бота: невірна фігура для ходу.', 'error');
+        $gameState->switchPlayer();
+    }
+
+    private function performBotMove(array $coordinates, GameState $gameState, GameEndDetector $gameEndDetector): void
+    {
+        $piece = $this->board->getPiece($coordinates['fromRow'], $coordinates['fromCol']);
+        $captureInfo = $this->findCaptureOption(
+            $piece->getPossibleCaptures($coordinates['fromRow'], $coordinates['fromCol'], $this->board),
+            $coordinates['toRow'],
+            $coordinates['toCol']
+        );
 
         if ($captureInfo) {
-            $this->processBotCapture($fromRow, $fromCol, $toRow, $toCol, $captureInfo['captured'], $gameState, $gameEndDetector);
+            $this->handleBotCapture($coordinates, $captureInfo['captured'], $gameState, $gameEndDetector);
         } else {
-            $this->board->movePiece($fromRow, $fromCol, $toRow, $toCol);
-            $this->messageService->showMessage("Бот зробив хід", 'info');
-            $gameState->switchPlayer();
-            $gameEndDetector->checkGameEnd($gameState);
+            $this->handleBotRegularMove($coordinates, $gameState, $gameEndDetector);
         }
+    }
+
+    private function handleBotCapture(array $coordinates, array $capturedPieces, GameState $gameState, GameEndDetector $gameEndDetector): void
+    {
+        $this->processBotCapture(
+            $coordinates['fromRow'],
+            $coordinates['fromCol'],
+            $coordinates['toRow'],
+            $coordinates['toCol'],
+            $capturedPieces,
+            $gameState,
+            $gameEndDetector
+        );
+    }
+
+    private function handleBotRegularMove(array $coordinates, GameState $gameState, GameEndDetector $gameEndDetector): void
+    {
+        $this->board->movePiece(
+            $coordinates['fromRow'],
+            $coordinates['fromCol'],
+            $coordinates['toRow'],
+            $coordinates['toCol']
+        );
+
+        $this->messageService->showMessage("Бот зробив хід", 'info');
+        $this->finalizeBotTurn($gameState, $gameEndDetector);
     }
 
     private function processBotCapture(int $fromRow, int $fromCol, int $toRow, int $toCol, array $capturedPieces, GameState $gameState, GameEndDetector $gameEndDetector): void
     {
+        $this->removeCapturedPieces($capturedPieces);
+        $this->executeCapture($fromRow, $fromCol, $toRow, $toCol);
+        $this->showCaptureMessage();
+        $this->handleContinuousCapture($toRow, $toCol, $gameState, $gameEndDetector);
+    }
+
+    private function removeCapturedPieces(array $capturedPieces): void
+    {
         foreach ($capturedPieces as $captured) {
             $this->board->removePiece($captured['row'], $captured['col']);
         }
+    }
 
+    private function executeCapture(int $fromRow, int $fromCol, int $toRow, int $toCol): void
+    {
         $this->board->movePiece($fromRow, $fromCol, $toRow, $toCol);
-        $this->messageService->showMessage("Бот взяв фігуру!", 'success');
+    }
 
+    private function showCaptureMessage(): void
+    {
+        $this->messageService->showMessage("Бот взяв фігуру!", 'success');
+    }
+
+    private function handleContinuousCapture(int $toRow, int $toCol, GameState $gameState, GameEndDetector $gameEndDetector): void
+    {
         if ($this->botCanContinueCapture($toRow, $toCol)) {
-            $this->messageService->showMessage('Бот продовжує бити!', 'info');
+            $this->showContinuousCaptureMessage();
             $this->makeBotMove($gameState, $gameEndDetector);
         } else {
-            $gameState->switchPlayer();
-            $gameEndDetector->checkGameEnd($gameState);
+            $this->finalizeBotTurn($gameState, $gameEndDetector);
         }
     }
 
+    private function showContinuousCaptureMessage(): void
+    {
+        $this->messageService->showMessage('Бот продовжує бити!', 'info');
+    }
+
+    private function finalizeBotTurn(GameState $gameState, GameEndDetector $gameEndDetector): void
+    {
+        $gameState->switchPlayer();
+        $gameEndDetector->checkGameEnd($gameState);
+    }
     private function isValidBotPiece(?PieceInterface $piece, string $botColor): bool
     {
         return $piece !== null && $piece->getColor() === $botColor;

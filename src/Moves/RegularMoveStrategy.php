@@ -42,7 +42,7 @@ class RegularMoveStrategy implements MoveStrategy
     {
         if ($color === 'white') {
             return $toR === $fromR - 1;
-        } else { // black
+        } else { 
             return $toR === $fromR + 1;
         }
     }

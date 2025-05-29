@@ -24,6 +24,7 @@ $isGameRestarted = ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] ==
 ?>
 <!DOCTYPE html>
 <html lang="uk">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -33,11 +34,13 @@ $isGameRestarted = ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] ==
         .piece.white {
             background-image: url('assets/Figure1_.png');
         }
+
         .piece.black {
             background-image: url('assets/Figure_2_.png');
         }
     </style>
 </head>
+
 <body>
 
     <?php echo $timer->renderTimer(); ?>
@@ -57,15 +60,20 @@ $isGameRestarted = ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] ==
             <form action="index.php" method="post" style="display:inline-block;">
                 <label for="game_mode">Режим гри:</label>
                 <select name="game_mode" id="game_mode" onchange="togglePlayerColorSelection()">
-                    <option value="player_vs_player" <?php echo ($gameMode === 'player_vs_player') ? 'selected' : ''; ?>>Гравець проти гравця</option>
-                    <option value="player_vs_bot" <?php echo ($gameMode === 'player_vs_bot') ? 'selected' : ''; ?>>Гравець проти бота</option>
+                    <option value="player_vs_player" <?php echo ($gameMode === 'player_vs_player') ? 'selected' : ''; ?>>
+                        Гравець проти гравця</option>
+                    <option value="player_vs_bot" <?php echo ($gameMode === 'player_vs_bot') ? 'selected' : ''; ?>>Гравець
+                        проти бота</option>
                 </select>
 
-                <div id="player_color_selection" style="display: <?php echo ($gameMode === 'player_vs_bot') ? 'inline-block' : 'none'; ?>; margin-left: 15px;">
+                <div id="player_color_selection"
+                    style="display: <?php echo ($gameMode === 'player_vs_bot') ? 'inline-block' : 'none'; ?>; margin-left: 15px;">
                     <label for="player_color">Ваш колір:</label>
                     <select name="player_color" id="player_color">
-                        <option value="white" <?php echo ($humanPlayerColor === 'white') ? 'selected' : ''; ?>>Білі</option>
-                        <option value="black" <?php echo ($humanPlayerColor === 'black') ? 'selected' : ''; ?>>Чорні</option>
+                        <option value="white" <?php echo ($humanPlayerColor === 'white') ? 'selected' : ''; ?>>Білі
+                        </option>
+                        <option value="black" <?php echo ($humanPlayerColor === 'black') ? 'selected' : ''; ?>>Чорні
+                        </option>
                     </select>
                 </div>
 
@@ -85,11 +93,9 @@ $isGameRestarted = ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] ==
             </form>
         </div>
 
-        <?php if (!empty($message)): ?>
-            <div class="message <?php echo htmlspecialchars($messageType); ?>">
-                <?php echo htmlspecialchars($message); ?>
-            </div>
-        <?php endif; ?>
+        <div class="message <?php echo !empty($message) ? htmlspecialchars($messageType) : 'info'; ?>">
+            <?php echo !empty($message) ? htmlspecialchars($message) : '&nbsp;'; ?>
+        </div>
     </div>
 
     <script>
@@ -118,9 +124,9 @@ $isGameRestarted = ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] ==
     <?php echo $timer->getTimerScript($startTime, $gameStatus); ?>
 
     <script src="js/game.js"></script>
-    
+
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', function () {
             if (window.wasGameRestarted && window.gameTimer) {
                 window.gameTimer.reset();
                 if (window.gameStartTime) {
@@ -134,4 +140,5 @@ $isGameRestarted = ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] ==
         });
     </script>
 </body>
+
 </html>

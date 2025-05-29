@@ -145,14 +145,13 @@ h1 {
 }
 
 .message {
- 
   margin-top: 20px;
   padding: 10px 15px;
   border-radius: 5px;
   font-weight: bold;
   text-align: center;
   width: 100%;
-  
+
   box-sizing: border-box;
 }
 
@@ -204,65 +203,65 @@ h1 {
   background-color: #0056b3;
 }
 .game-timer-widget {
-    position: fixed;
-    left: 20px;
-    top: 20px;
-    background: #2c3e50;
-    border-radius: 10px;
-    padding: 20px;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
-    z-index: 1000;
-    min-width: 150px;
-    font-family: Arial, sans-serif;
+  position: fixed;
+  left: 20px;
+  top: 20px;
+  background: #2c3e50;
+  border-radius: 10px;
+  padding: 20px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+  z-index: 1000;
+  min-width: 150px;
+  font-family: Arial, sans-serif;
 }
 
 .timer-header h3 {
-    color: #ecf0f1;
-    text-align: center;
-    margin: 0 0 15px 0;
-    font-size: 16px;
-    font-weight: bold;
+  color: #ecf0f1;
+  text-align: center;
+  margin: 0 0 15px 0;
+  font-size: 16px;
+  font-weight: bold;
 }
 
 .timer-display {
-    background: #34495e;
-    color: #2ecc71;
-    font-family: 'Courier New', monospace;
-    font-size: 24px;
-    font-weight: bold;
-    text-align: center;
-    padding: 10px;
-    border-radius: 8px;
-    margin-bottom: 10px;
-    box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.3);
+  background: #34495e;
+  color: #2ecc71;
+  font-family: "Courier New", monospace;
+  font-size: 24px;
+  font-weight: bold;
+  text-align: center;
+  padding: 10px;
+  border-radius: 8px;
+  margin-bottom: 10px;
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.3);
 }
 
 .timer-status {
-    text-align: center;
-    font-size: 12px;
-    font-weight: bold;
-    padding: 5px;
-    border-radius: 5px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: bold;
+  padding: 5px;
+  border-radius: 5px;
 }
 
 .timer-status.running {
-    background: #27ae60;
-    color: white;
+  background: #27ae60;
+  color: white;
 }
 
 .timer-status.stopped {
-    background: #e74c3c;
-    color: white;
+  background: #e74c3c;
+  color: white;
 }
 .timer-status.finished {
-            color: #dc3545;
-            font-weight: bold;
-        }
-        
-        .timer-status.running {
-            color: #28a745;
-        }
-        
-        .timer-status.stopped {
-            color: #6c757d;
-        }
+  color: #dc3545;
+  font-weight: bold;
+}
+
+.timer-status.running {
+  color: #28a745;
+}
+
+.timer-status.stopped {
+  color: #6c757d;
+}
