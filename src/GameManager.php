@@ -16,6 +16,7 @@ require_once 'src/Game/GameState.php';
 require_once 'src/Game/GameEndDetector.php';
 require_once 'src/Game/PlayerActionHandler.php';
 require_once 'src/Bots/BotService.php';
+require_once 'game.php';
 
 class GameManager implements MessageObserver
 {
